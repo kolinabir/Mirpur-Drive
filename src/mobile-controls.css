@@ -1,0 +1,61 @@
+#mobile-controls { position: fixed; inset: 0; z-index: 23; pointer-events: none; user-select: none; -webkit-user-select: none; }
+#mobile-controls[hidden] { display: none; }
+#mobile-controls button, .touch-stick { pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent; }
+#mobile-controls button { min-height: 48px; padding: 8px 12px; border-radius: 14px; border: 1px solid #ffffff36; background: #101b20da; color: #f2efe8; font: 600 12px system-ui; }
+#mobile-controls button.pressed { background: #00c9bd; color: #06231f; }
+.touch-stick { position: absolute; left: max(22px, env(safe-area-inset-left)); bottom: max(34px, env(safe-area-inset-bottom)); width: 126px; height: 126px; border-radius: 50%; border: 1px solid #ffffff40; background: #13202670; display: grid; place-items: center; }
+.touch-stick-knob { width: 48px; height: 48px; border-radius: 50%; background: #c9e9e6bb; border: 1px solid #ffffff80; }
+.touch-stick-label { position: absolute; bottom: 8px; color: #ffffffa6; font: 600 9px system-ui; letter-spacing: .14em; }
+.touch-instruction { position: absolute; bottom: calc(max(34px, env(safe-area-inset-bottom)) + 140px); left: 22px; color: #eff9f3bd; text-shadow: 0 1px 5px #000; font: 11px system-ui; }
+.touch-actions { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(34px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(2, 72px); gap: 8px; }
+.touch-pedals { display: none; }
+.driving .touch-pedals { position: absolute; display: flex; gap: 8px; right: max(16px, env(safe-area-inset-right)); bottom: max(34px, env(safe-area-inset-bottom)); }
+.driving .touch-pedals button { width: 80px; height: 70px; }
+.driving .touch-actions { bottom: calc(max(34px, env(safe-area-inset-bottom)) + 80px); grid-template-columns: repeat(2, 80px); }
+.driving [data-action="interact"], .driving [data-action="run"] { display: none; }
+.driving .touch-instruction { display: none; }
+body.touch-game #view { touch-action: none; }
+body.touch-game #hud.unlocked::after, body.touch-game #crosshair { display: none; }
+body.touch-game #topbar { top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: 10px; padding: 6px 10px; font-size: 11px; gap: 8px; white-space: nowrap; overflow: hidden; }
+body.touch-game #topbar .bn { display: none; }
+body.touch-game #hud-top-actions { top: calc(max(10px, env(safe-area-inset-top)) + 42px); right: max(10px, env(safe-area-inset-right)); left: auto; transform: none; gap: 6px; }
+body.touch-game #hud-top-actions button { min-height: 44px; padding: 8px 12px; font-size: 12px; }
+body.touch-game #minimap:not(.expanded) { width: 96px; height: 96px; right: auto; left: max(10px, env(safe-area-inset-left)); top: calc(max(10px, env(safe-area-inset-top)) + 45px); bottom: auto; }
+body.touch-game #minimap-street { display: none; }
+body.touch-game #bottombar { bottom: max(6px, env(safe-area-inset-bottom)); left: 12px; font-size: 10px; padding: 3px 8px; gap: 6px; }
+body.touch-game #bottombar kbd { display: none; }
+body.touch-game #sports-hud-wrap { width: 110px !important; height: 110px !important; right: 16px !important; bottom: auto !important; top: calc(max(10px, env(safe-area-inset-top)) + 92px); }
+body.touch-game #gps-hud { bottom: auto; top: 155px; right: auto; left: 12px; max-width: 190px; font-size: 10px; }
+body.touch-game #map-controls { top: max(56px, env(safe-area-inset-top)); width: calc(100% - 24px); flex-wrap: wrap; justify-content: center; }
+body.touch-game #map-controls button, body.touch-game #map-close { min-width: 44px; min-height: 44px; }
+body.touch-game #maphint { display: none; }
+@media (max-height: 500px) {
+  body.touch-game #topbar { right: auto; max-width: 60vw; }
+  body.touch-game #hud-top-actions { top: max(10px, env(safe-area-inset-top)); }
+  body.touch-game #sports-hud-wrap { top: 64px; width: 90px !important; height: 90px !important; right: 120px !important; }
+  .touch-stick { width: 106px; height: 106px; bottom: max(26px, env(safe-area-inset-bottom)); }
+  .touch-instruction { display: none; }
+  body.touch-game #gps-hud { display: none; }
+}
+
+#mobile-controls [data-action="descend"] { display: none; }
+#mobile-controls.flying [data-action="descend"] { display: block; }
+body.touch-game #gta-camera-toast { top: 30% !important; max-width: 75vw; font-size: 10px !important; text-align: center; }
+body.touch-game #drift-banner { font-size: 16px !important; top: 40% !important; }
+
+body.touch-game .first-journey { top: calc(max(10px, env(safe-area-inset-top)) + 154px); left: 12px; width: min(280px, calc(100vw - 24px)); padding: 10px 40px 10px 12px; }
+body.touch-game .journey-title { font-size: 14px; margin: 4px 0; }
+body.touch-game .journey-copy { font-size: 11px; line-height: 1.4; }
+body.touch-game .journey-dismiss { width: 44px; }
+@media (max-height: 500px) {
+  body.touch-game .first-journey { top: 52px; left: 126px; width: min(270px, calc(100vw - 410px)); padding: 8px 36px 8px 10px; }
+  body.touch-game .journey-copy { display: none; }
+}
+body.touch-game #interaction { bottom: 190px !important; max-width: calc(100vw - 32px); font-size: 12px !important; }
+body.touch-driving #interaction { display: none; }
+body.touch-game #bottombar { max-width: calc(100vw - 24px); white-space: nowrap; }
+body.touch-driving #bottombar > .sep, body.touch-driving #bottombar-teleport, body.touch-driving #bottombar-help { display: none; }
+body.touch-game #drive-mute { font-size: 10px !important; padding: 0 4px !important; }
+@media (min-height: 501px) {
+  body.touch-driving .first-journey { top: calc(max(10px, env(safe-area-inset-top)) + 208px); }
+}

@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Mirpur Drive</title>
+<!-- Preconnect to font CDN so the TLS handshake starts immediately -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- Non-render-blocking font load: media="print" defers download, onload swaps it in -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;600;700&display=swap"
+      rel="stylesheet" media="print" onload="this.media='all'" />
+<!-- Preload the largest scene JSON so it downloads in parallel with JS parsing -->
+<link rel="preload" href="/scene-north.json" as="fetch" crossorigin />
+<!-- Entry-point module preload -->
+<link rel="modulepreload" href="/src/main.js" />
+<style>
+  :root {
+    --ink: #f2efe8;
+    --dim: #a9a49a;
+    --teal: #00c9bd;
+    --panel: rgba(18, 19, 17, 0.86);
+    --edge: rgba(255, 255, 255, 0.13);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #101110;
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #view { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+
+  .hidden { display: none !important; }
+
+  /* ---------------------------------------------------------------- loading */
+  #loading {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+    background: radial-gradient(circle at 50% 36%, #152220 0%, #0d1110 65%, #070908 100%);
+  }
+  .loading-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 14px; margin-bottom: 14px;
+    border: 1px solid rgba(0, 201, 189, 0.35); border-radius: 999px;
+    background: rgba(0, 201, 189, 0.09);
+    font: 600 11px/1 system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal);
+  }
+  #loading h1 {
+    margin: 0 0 6px; font-size: clamp(24px, 4vw, 36px); font-weight: 700;
+    letter-spacing: -0.02em; color: var(--ink);
+  }
+  #loading h1 .bn { font-family: "Noto Sans Bengali", system-ui; color: var(--teal); }
+  .loading-sub {
+    margin: 0 0 28px; color: var(--dim); font-size: 13.5px; max-width: 480px;
+  }
+  .loading-box {
+    width: min(440px, 86vw); margin-bottom: 24px;
+  }
+  .loading-status-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 8px; font-size: 12.5px;
+  }
+  #loading-text { color: var(--dim); min-height: 18px; text-align: left; }
+  #loading-pct { color: var(--teal); font-weight: 700; font-variant-numeric: tabular-nums; }
+  #loading-track {
+    width: 100%; height: 6px;
+    background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px; overflow: hidden; position: relative;
+  }
+  #loading-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #009688, #00c9bd, #64ffda);
+    box-shadow: 0 0 12px rgba(0, 201, 189, 0.65);
+    border-radius: 999px;
+    transition: width 0.22s ease-out;
+    position: relative;
+  }
+  #loading-bar::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: loading-shimmer 1.4s infinite;
+  }
+  @keyframes loading-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .loading-tips {
+    display: inline-flex; align-items: center; gap: 10px;
+    max-width: min(520px, 90vw);
+    padding: 10px 18px; border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid var(--edge);
+    font-size: 12.5px; color: var(--dim); text-align: left;
+    transition: opacity 0.3s ease;
+  }
+  .loading-tips .tip-icon { font-size: 18px; flex-shrink: 0; }
+  .loading-tips b { color: var(--ink); font-weight: 600; }
+
+
+  /* ------------------------------------------------------------------ start */
+  #start {
+    position: fixed; inset: 0; z-index: 25;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    overflow-y: auto;              /* short viewports must still reach the button */
+    -webkit-overflow-scrolling: touch;
+    background: radial-gradient(ellipse at 50% 40%, rgba(16,17,16,0.72), rgba(16,17,16,0.95));
+    backdrop-filter: blur(3px);
+  }
+  #start .card {
+    width: min(560px, 92vw);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    margin: auto;
+    padding: 30px 32px 26px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+  }
+
+  #start h1 { margin: 0 0 4px; font-size: 25px; font-weight: 600; letter-spacing: -0.015em; }
+  #start h1 .bn { font-family: "Noto Sans Bengali", system-ui; color: var(--teal); }
+  #start .sub { margin: 0 0 18px; color: var(--dim); font-size: 13.5px; }
+  #build-info { color: var(--dim); font-size: 12.5px; margin-bottom: 20px; }
+  #build-info b { color: var(--ink); font-weight: 600; }
+
+  .keys { display: grid; grid-template-columns: 88px 1fr; gap: 7px 14px; font-size: 13px; margin-bottom: 22px; }
+  .keys dt { color: var(--dim); }
+  kbd {
+    display: inline-block; padding: 1px 6px; margin-right: 3px;
+    background: rgba(255,255,255,0.09); border: 1px solid var(--edge);
+    border-bottom-width: 2px; border-radius: 4px;
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink);
+  }
+
+  #begin {
+    width: 100%; padding: 12px; border: 0; border-radius: 9px;
+    background: var(--teal); color: #06231f;
+    font: 600 15px system-ui, sans-serif; cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  #begin:hover { filter: brightness(1.1); }
+
+  .credit { margin: 16px 0 0; font-size: 11.5px; color: #6f6b63; line-height: 1.6; }
+  .credit a { color: #8d8880; }
+
+  /* Below roughly 620px of height the explanatory copy is dropped so the
+     controls and the start button always fit without scrolling. */
+  @media (max-height: 620px) {
+    #start .card { padding: 20px 22px 18px; }
+    #start h1 { font-size: 20px; }
+    #start .sub { font-size: 12.5px; margin-bottom: 12px; }
+    #start .credit { display: none; }
+    .keys { font-size: 12px; gap: 5px 12px; margin-bottom: 14px; }
+    #build-info { margin-bottom: 14px; }
+  }
+
+  /* ---------------------------------------------------------- gateway modal */
+  /* Through-service popup (docs/briefs/P12-A-DISTRICT-WIRING.md item 6):
+     offered when the player boards a train at a district's own gateway
+     station. Same panel look as #start/#help — dark card, teal accent. */
+  #gateway {
+    position: fixed; inset: 0; z-index: 35;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    background: radial-gradient(ellipse at 50% 40%, rgba(16,17,16,0.72), rgba(16,17,16,0.95));
+    backdrop-filter: blur(3px);
+  }
+  #gateway .card {
+    width: min(440px, 92vw);
+    margin: auto;
+    padding: 26px 28px 22px;
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+  }
+  #gateway h1 { margin: 0 0 10px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  #gateway p { margin: 0 0 20px; color: var(--dim); font-size: 13.5px; line-height: 1.5; }
+  #gateway-actions { display: flex; gap: 10px; }
+  #gateway-actions button {
+    flex: 1; padding: 11px; border: 0; border-radius: 9px;
+    font: 600 13.5px system-ui, sans-serif; cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  #gateway-ride { background: var(--teal); color: #06231f; }
+  #gateway-ride:hover { filter: brightness(1.1); }
+  #gateway-stay { background: rgba(255,255,255,0.09); color: var(--ink); border: 1px solid var(--edge) !important; }
+  #gateway-stay:hover { filter: brightness(1.2); }
+
+  /* -------------------------------------------------------------------- hud */
+  #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+  #hud.unlocked::after {
+    content: "Click to look around";
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    padding: 8px 16px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 8px; font-size: 13px; color: var(--dim);
+  }
+
+  #crosshair {
+    position: absolute; left: 50%; top: 50%; width: 4px; height: 4px;
+    margin: -2px 0 0 -2px; border-radius: 50%;
+    background: rgba(255,255,255,0.55); box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+  }
+
+  #topbar {
+    position: absolute; top: 14px; left: 16px;
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 8px 14px; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 9px;
+    font-size: 12.5px;
+  }
+  #topbar .title { font-weight: 600; }
+  #topbar .title .bn { font-family: "Noto Sans Bengali", system-ui; color: var(--teal); }
+  #location { color: var(--teal); font-variant-numeric: tabular-nums; }
+
+  #stats {
+    position: absolute; top: 14px; right: 16px;
+    padding: 7px 12px; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 8px;
+    font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); font-variant-numeric: tabular-nums;
+  }
+
+  #minimap {
+    position: absolute; right: 16px; bottom: 16px;
+    width: 190px; height: 190px;
+    /* GTA-style corner map (owner request 2026-09-07: "make the minimap in
+       GTA style!"): a bare circle, no panel chevron behind it. The circular
+       mask, ring and ground fill are all drawn by minimap.js onto the
+       canvas itself; this rule just drops the rectangular panel look and
+       gives the disc a soft drop shadow so it reads over any background. */
+    background: transparent; border: none; border-radius: 50%;
+    box-shadow: 0 3px 14px rgba(0, 0, 0, 0.55);
+    /* #hud is pointer-events:none so the WebGL canvas keeps the mouse; the
+       minimap has to opt back in to be clickable (owner request: click for
+       the whole map). z-index keeps it above #view, which is a static
+       sibling of #hud. */
+    pointer-events: auto;
+    z-index: 20;
+    cursor: zoom-in;
+  }
+  /* Click the minimap for the whole map (owner request 2026-09-07).
+     Sized off the shorter viewport axis so the square canvas always fits. */
+  #minimap.expanded {
+    right: 50%; bottom: 50%;
+    transform: translate(50%, 50%);
+    width: min(88vw, 88vh); height: min(88vw, 88vh);
+    background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+    cursor: default;
+    z-index: 40;
+  }
+  #maphint {
+    /* P13-F item 8: this used to have no width limit, so on a narrow
+       viewport its centred, single-line content (three <kbd> chips
+       included) could be wider than 100vw -- and since html/body are
+       `overflow: hidden` (see the base reset above), the excess on both
+       sides of the centred box was silently clipped by the viewport edge
+       rather than wrapping. `max-width` + `white-space: normal` guarantee
+       it always fits and wraps instead of ever overflowing. */
+    position: absolute; left: 50%; bottom: max(12px, calc(6vh - 26px));
+    transform: translateX(-50%);
+    max-width: min(94vw, 480px); box-sizing: border-box;
+    white-space: normal; text-align: center;
+    padding: 7px 13px; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 8px;
+    font-size: 12px; color: var(--dim); z-index: 41;
+    pointer-events: none;
+  }
+  /* Full-map zoom/pan controls (P3-MAP-GTA). Hidden until minimap.js shows
+     them on setExpanded(true); top-centre so they clear #maphint at the
+     bottom and #topbar/#stats in the corners. */
+  #map-controls {
+    position: absolute; left: 50%; top: max(12px, calc(6vh - 26px));
+    transform: translateX(-50%);
+    display: flex; gap: 6px; z-index: 42; pointer-events: auto;
+  }
+  #map-controls.hidden { display: none; }
+  #map-controls button {
+    padding: 6px 13px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 8px; font: 600 13px system-ui, sans-serif; color: var(--ink);
+    cursor: pointer; min-width: 34px;
+  }
+  #map-controls button:hover { filter: brightness(1.2); }
+  #map-controls button:active { filter: brightness(0.9); }
+  /* Scale bar for the full map, bottom-right so it never collides with
+     #maphint (bottom-centre) or the map-controls row (top-centre). */
+  #map-scale {
+    position: absolute; right: max(16px, calc(6vw - 20px)); bottom: 22px;
+    z-index: 42; display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 8px; color: var(--dim); font-size: 11.5px;
+    pointer-events: none;
+  }
+  #map-scale.hidden { display: none; }
+  #map-scale-bar {
+    display: inline-block; height: 3px; background: var(--ink); border-radius: 2px;
+  }
+  /* Mark/navigate HUD (P13-B job 3). Sits under #map-controls, top-centre,
+     so it never collides with #map-scale (bottom-right) or #maphint
+     (bottom-centre). Hidden until a waypoint is dropped. */
+  #map-waypoint {
+    position: absolute; left: 50%; top: max(52px, calc(6vh + 14px));
+    transform: translateX(-50%);
+    padding: 6px 13px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 8px; z-index: 42; color: var(--ink); font-size: 12.5px;
+    display: flex; gap: 10px; align-items: center; pointer-events: none;
+  }
+  #map-waypoint.hidden { display: none; }
+  #map-waypoint b { color: var(--teal); }
+  #map-controls button.active {
+    background: var(--teal); color: #06231f; border-color: transparent;
+  }
+
+  /* GTA-style street banner under corner minimap */
+  #minimap-street {
+    position: absolute; right: 16px; bottom: 4px;
+    width: 190px; text-align: center;
+    font: 700 10.5px/1.3 system-ui, -apple-system, sans-serif;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    color: #f1f5f9; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.8);
+    pointer-events: none; z-index: 21;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #minimap-street .street-name { color: #f8fafc; font-weight: 700; }
+  #minimap-street .district-name { color: #94a3b8; font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; }
+
+  /* Explicit close button for full map */
+  #map-close {
+    position: absolute; right: max(18px, calc(6vw - 12px)); top: max(16px, calc(6vh - 22px));
+    width: 36px; height: 36px;
+    background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 50%; font: 600 18px system-ui, sans-serif;
+    color: var(--ink); cursor: pointer; z-index: 43;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    transition: transform 0.1s ease, filter 0.1s ease;
+  }
+  #map-close:hover { filter: brightness(1.25); transform: scale(1.08); }
+  #map-close:active { transform: scale(0.95); }
+  #map-close.hidden { display: none; }
+
+  /* Turn-by-turn GPS HUD banner */
+  #gps-hud {
+    position: absolute; right: 220px; bottom: 20px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid #d946ef;
+    border-radius: 12px;
+    padding: 8px 14px;
+    color: #f8fafc;
+    z-index: 21;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65), 0 0 12px rgba(217, 70, 239, 0.25);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+    font: 13px system-ui, sans-serif;
+  }
+  #gps-hud .gps-icon {
+    font-size: 26px;
+    color: #f0abfc;
+    line-height: 1;
+  }
+  #gps-hud .gps-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  #gps-hud .gps-dist-action {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  #gps-hud .gps-turn-dist {
+    font-size: 15px;
+    font-weight: 800;
+    color: #38bdf8;
+  }
+  #gps-hud .gps-action {
+    font-weight: 600;
+    color: #f8fafc;
+  }
+  #gps-hud .gps-trip-summary {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  /* Teleport button styling in map controls */
+  #map-teleport {
+    background: #0284c7 !important;
+    color: #f0f9ff !important;
+    border-color: #38bdf8 !important;
+    font-weight: 700 !important;
+  }
+  #map-teleport:hover {
+    filter: brightness(1.25) !important;
+  }
+
+  #bottombar {
+    position: absolute; left: 16px; bottom: 16px;
+    display: flex; gap: 10px; align-items: center;
+    padding: 8px 13px; background: var(--panel);
+    border: 1px solid var(--edge); border-radius: 9px;
+    font-size: 12.5px; color: var(--dim);
+  }
+  #bottombar b { color: var(--ink); font-weight: 600; }
+  #bottombar .sep { opacity: 0.35; }
+
+  /* ----------------------------------------------------------- hud & actions */
+  #hud-top-actions {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; pointer-events: auto; z-index: 22;
+  }
+  #drive-btn, #teleport-btn {
+    padding: 8px 16px; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: 9px; font: 600 12.5px system-ui, sans-serif; color: var(--ink);
+    cursor: pointer; pointer-events: auto; user-select: none;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #drive-btn:hover, #teleport-btn:hover { filter: brightness(1.18); transform: translateY(-1px); }
+  #drive-btn.active { background: var(--teal); color: #06231f; border-color: transparent; }
+  #teleport-btn { border-color: rgba(0, 201, 189, 0.4); }
+  #teleport-btn:hover { background: rgba(0, 201, 189, 0.18); color: #5eead4; }
+
+  #boundary-warning {
+    position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
+    padding: 7px 16px; background: rgba(176, 32, 32, 0.82); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px; font: 600 13px system-ui, sans-serif; color: #fff;
+    letter-spacing: 0.01em;
+  }
+
+  /* ------------------------------------------------------------- modal system */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    background: radial-gradient(ellipse at 50% 40%, rgba(10, 14, 12, 0.82), rgba(6, 8, 7, 0.96));
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .modal-card {
+    background: var(--panel);
+    border: 1px solid var(--edge);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 1px rgba(255, 255, 255, 0.2);
+    max-height: calc(100vh - 36px);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 20px 24px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .modal-title-group h2 {
+    margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
+  }
+  .modal-title-group .bn {
+    font-family: "Noto Sans Bengali", system-ui; color: var(--teal); font-size: 18px; margin-left: 6px;
+  }
+  .modal-sub { margin: 0; font-size: 12.5px; color: var(--dim); }
+  .modal-close-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08); border: 1px solid var(--edge);
+    color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .modal-close-btn:hover { background: rgba(255, 255, 255, 0.18); transform: scale(1.08); }
+  .modal-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px; border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.24); font-size: 12px; color: var(--dim);
+  }
+  .footer-hint b { color: var(--ink); }
+
+  /* ----------------------------------------------------------- help modal (H) */
+  .help-card { width: min(720px, 94vw); }
+  .help-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px; padding: 20px 24px; overflow-y: auto;
+  }
+  .help-section {
+    background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .help-section h3 {
+    margin: 0 0 12px; font-size: 13.5px; font-weight: 600; color: var(--teal);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .help-keys {
+    display: grid; grid-template-columns: 88px 1fr; gap: 8px 10px; font-size: 12.5px;
+    margin: 0; align-items: center;
+  }
+  .help-keys dt { display: flex; gap: 4px; flex-wrap: wrap; }
+  .help-keys dd { color: #e2e8f0; margin: 0; }
+  .action-btn {
+    padding: 7px 16px; border: 0; border-radius: 8px;
+    background: var(--teal); color: #06231f; font: 600 13px system-ui, sans-serif;
+    cursor: pointer; transition: filter 0.15s ease;
+  }
+  .action-btn:hover { filter: brightness(1.15); }
+
+  /* ------------------------------------------------------- teleport modal (O) */
+  .teleport-card { width: min(860px, 95vw); }
+  .teleport-controls-row {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    padding: 16px 24px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .search-wrap { position: relative; flex: 1; min-width: 220px; }
+  #teleport-search {
+    width: 100%; padding: 8px 32px 8px 34px;
+    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--edge);
+    border-radius: 9px; color: var(--ink); font-size: 13px; outline: none;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  #teleport-search:focus {
+    border-color: var(--teal); background: rgba(0, 201, 189, 0.07);
+  }
+  .search-icon {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; opacity: 0.6; pointer-events: none;
+  }
+  .search-clear {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--dim); font-size: 16px;
+    cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  }
+  .teleport-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 6px 13px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--edge);
+    border-radius: 8px; color: var(--dim); font: 600 12px system-ui, sans-serif;
+    cursor: pointer; transition: all 0.15s ease;
+  }
+  .tab-btn:hover { filter: brightness(1.2); }
+  .tab-btn.active {
+    background: var(--teal); color: #06231f; border-color: transparent;
+  }
+  .teleport-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px; padding: 18px 24px; overflow-y: auto; max-height: 54vh;
+  }
+  .place-card {
+    background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column;
+    justify-content: space-between; gap: 10px;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    cursor: pointer;
+  }
+  .place-card:hover {
+    background: rgba(255, 255, 255, 0.07); border-color: rgba(0, 201, 189, 0.45);
+    transform: translateY(-2px);
+  }
+  .place-card-header { display: flex; gap: 10px; align-items: flex-start; }
+  .place-icon {
+    font-size: 22px; line-height: 1; flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.05); border-radius: 8px;
+    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  }
+  .place-title-group { flex: 1; min-width: 0; }
+  .place-name {
+    font-size: 13.5px; font-weight: 700; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;
+  }
+  .place-bn {
+    font-size: 11.5px; color: var(--teal); font-family: "Noto Sans Bengali", system-ui;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .place-desc {
+    font-size: 11.5px; color: var(--dim); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .place-card-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .district-pill {
+    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 5px;
+    background: rgba(255, 255, 255, 0.08); color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .district-pill.is-active {
+    background: rgba(0, 201, 189, 0.15); color: #2dd4bf;
+    border: 1px solid rgba(0, 201, 189, 0.3);
+  }
+  .teleport-action-btn {
+    padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+    background: rgba(0, 201, 189, 0.18); border: 1px solid rgba(0, 201, 189, 0.4);
+    color: #5eead4; transition: all 0.15s ease;
+  }
+  .place-card:hover .teleport-action-btn {
+    background: var(--teal); color: #06231f; border-color: transparent;
+  }
+
+</style>
+<link rel="stylesheet" href="/src/game-ui.css" />
+</head>
+<body>
+
+<canvas id="view"></canvas>
+
+<div id="loading" aria-busy="true">
+  <div class="loading-art" aria-hidden="true"><div class="loading-sun"></div><div class="loading-city"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="loading-rail"></div><span class="loading-line">06</span></div>
+  <div class="loading-edition">DHAKA / BANGLADESH<span>FREE ROAM</span></div>
+  <div class="loading-badge">PREPARING YOUR SESSION</div>
+  <h1 id="loading-main-title">Mirpur Drive <span class="bn">মিরপুর ড্রাইভ</span></h1>
+  <div class="loading-sub" id="loading-sub-text">Open World Simulation along MRT Line 6, Dhaka</div>
+
+  <div class="loading-box">
+    <div class="loading-status-row">
+      <span id="loading-text" role="status">Preparing Mirpur...</span>
+      <span id="loading-pct">0%</span>
+    </div>
+    <div id="loading-track" role="progressbar" aria-label="Loading world" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="loading-bar"></div></div>
+  </div>
+
+  <div id="loading-tips" class="loading-tips">
+    <span class="tip-icon" aria-hidden="true">TIP</span>
+    <span id="loading-tip-text">Press <b>O</b> at any time for instant Teleportation to all stations &amp; landmarks!</span>
+  </div>
+</div>
+
+<div id="start" class="hidden">
+  <div class="start-masthead"><span>MIRPUR DRIVE</span><span class="start-edition">DHAKA · BANGLADESH</span></div>
+  <div class="card">
+    <div class="start-eyebrow">MRT LINE 6 / OPEN WORLD</div>
+    <h1 id="start-title">Mirpur Drive <span class="bn">মিরপুর ড্রাইভ</span></h1>
+    <p class="sub">
+      A walkable and drivable reconstruction of the Mirpur corridor along
+      MRT Line 6, Dhaka &mdash; Pallabi, Mirpur 11, Mirpur 10 and Uttara South.
+      Street layout, building footprints and the metro alignment come from
+      OpenStreetMap. Facades, signage and traffic are generated.
+    </p>
+    <div class="start-route">PALLABI <span></span> MIRPUR 11 <span></span> MIRPUR 10</div>
+    <div class="start-actions">
+      <button id="begin" type="button"><span>START JOURNEY</span><span aria-hidden="true">▸</span></button>
+      <button id="begin-direct" class="start-direct" type="button"><span>SKIP INTRO · FREE ROAM</span><span aria-hidden="true">↵</span></button>
+      <p id="intro-note" class="start-note">The 15-second introduction starts here. Click outside the controls to enter immediately.</p>
+      <p class="start-touch-note">Touch controls are ready. Move with your left thumb; drag to look.</p>
+    </div>
+    <details><summary>SETTINGS &amp; CONTROLS</summary>
+    <label class="touch-mode-option"><input id="touch-controls-toggle" type="checkbox"> Show on-screen controls</label>
+    <p>Street layout and building footprints from OpenStreetMap. Facades, signage and traffic are generated.</p>
+    <div id="build-info"></div>
+    <dl class="keys">
+      <dt>Move</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> and mouse &middot; <kbd>Space</kbd> jump</dd>
+      <dt>Run</dt><dd><kbd>Shift</kbd></dd>
+      <dt class="debug-only">Fly</dt><dd class="debug-only"><kbd>F</kbd> to toggle, <kbd>Space</kbd> up, <kbd>C</kbd> down</dd>
+      <dt>Jump to</dt><dd id="quick-travel"><kbd>1</kbd> Pallabi &middot; <kbd>2</kbd> Mirpur 11 &middot; <kbd>5</kbd> Mirpur 10 &middot; <kbd>6</kbd> Uttara South<span class="debug-only"> &middot; <kbd>3</kbd> platform &middot; <kbd>4</kbd> aerial</span></dd>
+      <dt>Teleport</dt><dd><kbd>O</kbd> <b>Instant Teleport Menu (All Stations &amp; Landmarks)</b></dd>
+      <dt>Drive</dt><dd><kbd>V</kbd> enter/exit car &middot; <kbd>Space</kbd> drift &middot; <kbd>X</kbd> switch vehicle</dd>
+      <dt>On foot</dt><dd><kbd>E</kbd> hail a ride, cha stalls, food &middot; <kbd>J</kbd> journal</dd>
+      <dt>Other</dt><dd><kbd>M</kbd> full map &middot; <kbd>T</kbd> cycle time of day &middot; <kbd>H</kbd> help guide</dd>
+    </dl>
+
+    </details>
+
+  </div>
+  <div class="start-footer"><span>WALK. DRIVE. RIDE.</span><span>MIRPUR / MRT LINE 6</span></div>
+</div>
+
+<div id="gateway" class="hidden">
+  <div class="card">
+    <h1 id="gateway-title">Through train</h1>
+    <p id="gateway-body"></p>
+    <div id="gateway-actions">
+      <button id="gateway-ride" type="button">Ride</button>
+      <button id="gateway-stay" type="button">Stay here</button>
+    </div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="crosshair"></div>
+
+  <div id="hud-top-actions">
+    <button id="drive-btn" type="button">Drive · V</button>
+    <button id="teleport-btn" type="button">Travel · O</button>
+  </div>
+
+  <div id="topbar">
+    <span class="title"><span class="bn">মিরপুর</span> Mirpur corridor</span>
+    <span id="location"></span>
+  </div>
+
+  <div id="stats">starting</div>
+
+  <canvas id="minimap" width="380" height="380" title="Click for the whole map"></canvas>
+  <div id="minimap-street">
+    <span class="street-name">Mirpur Corridor</span>
+    <span class="district-name">Mirpur</span>
+  </div>
+  <div id="gps-hud"></div>
+  <button id="map-close" class="hidden" type="button" title="Close map (Esc / M)">&times;</button>
+  <div id="maphint" class="hidden"><kbd>Drag</kbd> Pan &middot; <kbd>RMB / 2x</kbd> Waypoint &middot; <kbd>T</kbd> Teleport &middot; <kbd>Wheel</kbd> Zoom &middot; <kbd>R</kbd> Recenter &middot; <kbd>Esc</kbd> Close</div>
+  <div id="map-controls" class="hidden">
+    <button id="map-zoom-out" type="button" title="Zoom out (-)">&minus;</button>
+    <button id="map-zoom-in" type="button" title="Zoom in (+)">+</button>
+    <button id="map-recenter" type="button" title="Recentre on player (R)">R</button>
+    <button id="map-fit" type="button" title="Fit whole map (0)">Fit</button>
+    <button id="map-teleport" type="button" title="Teleport to Waypoint (T)">⚡ Teleport</button>
+    <button id="map-mark" type="button" title="Click the map to drop a waypoint">Mark</button>
+    <button id="map-mark-clear" type="button" title="Clear the waypoint">Clear</button>
+  </div>
+  <div id="map-scale" class="hidden">
+    <span id="map-scale-bar"></span><span id="map-scale-label"></span>
+  </div>
+  <div id="map-waypoint" class="hidden">
+    <span id="map-waypoint-bearing"></span>
+    <span id="map-waypoint-dist"></span>
+  </div>
+
+  <div id="bottombar">
+    <span>Mode <b id="mode">Walk</b></span>
+    <span class="sep">|</span>
+    <span>Time <b id="time-label">Midday</b></span>
+    <span class="sep">|</span>
+    <button id="bottombar-teleport" type="button"><kbd>O</kbd> Travel</button>
+    <span class="sep">|</span>
+    <button id="bottombar-help" type="button"><kbd>H</kbd> Controls</button>
+  </div>
+
+  <div id="boundary-warning" class="hidden">Turn back: leaving Mirpur</div>
+</div>
+
+<!-- Upgraded Help Modal (H) -->
+<div id="help-modal" class="modal-backdrop hidden">
+  <div class="modal-card help-card">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2>Controls <span class="bn">কন্ট্রোল ও নির্দেশিকা</span></h2>
+        <p class="modal-sub">Everything you need to navigate, drive, and fast-travel through Mirpur &amp; MRT Line 6</p>
+      </div>
+      <button id="help-close" class="modal-close-btn" type="button" title="Close (Esc / H)">&times;</button>
+    </div>
+
+    <div class="help-grid">
+      <div class="help-section">
+        <h3>Movement &amp; camera</h3>
+        <dl class="help-keys">
+          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk around</dd>
+          <dt><kbd>Space</kbd></dt><dd>Jump (while walking)</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Sprint / run faster</dd>
+          <dt><kbd>Mouse</kbd></dt><dd>Look around (Click view to lock)</dd>
+          <dt><kbd>E</kbd></dt><dd>Interact: hail a rickshaw, CNG or bus &middot; cha stalls &middot; food &middot; station gates &amp; trains</dd>
+          <dt><kbd>J</kbd></dt><dd>Journal: wallet, food diary, places discovered</dd>
+          <dt><kbd>F</kbd></dt><dd>Fly mode (<kbd>Space</kbd> up, <kbd>C</kbd> down)</dd>
+        </dl>
+      </div>
+
+      <div class="help-section">
+        <h3>Vehicles</h3>
+        <dl class="help-keys">
+          <dt><kbd>V</kbd></dt><dd>Enter / Exit car (or click Drive)</dd>
+          <dt><kbd>W</kbd><kbd>S</kbd></dt><dd>Accelerate / Reverse</dd>
+          <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Steer left / right</dd>
+          <dt><kbd>Space</kbd></dt><dd>Handbrake &amp; Drift</dd>
+          <dt><kbd>X</kbd></dt><dd>Switch car preset</dd>
+          <dt><kbd>C</kbd></dt><dd>Cycle camera view mode</dd>
+          <dt><kbd>K</kbd></dt><dd>Sound car horn</dd>
+        </dl>
+      </div>
+
+      <div class="help-section">
+        <h3>Fast travel</h3>
+        <dl class="help-keys">
+          <dt><kbd>O</kbd></dt><dd><b>Instant Teleport Menu</b> (All Places)</dd>
+          <dt><kbd>1</kbd><kbd>2</kbd><kbd>5</kbd><kbd>6</kbd></dt><dd>Direct station jumps</dd>
+          <dt><kbd>3</kbd></dt><dd>Hop onto metro platform deck</dd>
+          <dt><kbd>4</kbd></dt><dd>Aerial bird's-eye vantage view</dd>
+        </dl>
+      </div>
+
+      <div class="help-section">
+        <h3>Navigation</h3>
+        <dl class="help-keys">
+          <dt><kbd>M</kbd></dt><dd>Open / close full interactive map</dd>
+          <dt><kbd>Minimap</kbd></dt><dd>Click corner minimap to enlarge</dd>
+          <dt><kbd>RMB / 2x</kbd></dt><dd>Set GPS navigation waypoint</dd>
+          <dt><kbd>T</kbd></dt><dd>Cycle time of day (Morning &rarr; Night)</dd>
+          <dt><kbd>N</kbd></dt><dd>Mute / unmute audio</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Release cursor / close open menu</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <span class="footer-hint">Press <kbd>H</kbd> or <kbd>Esc</kbd> anytime to return to the game</span>
+      <button id="help-open-teleport" type="button" class="action-btn">Travel menu · O</button>
+    </div>
+  </div>
+</div>
+
+<!-- Instant Teleport Menu Modal (O) -->
+<div id="teleport-modal" class="modal-backdrop hidden">
+  <div class="modal-card teleport-card">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2>Travel <span class="bn">তাৎক্ষণিক টেলিপোর্ট</span></h2>
+        <p class="modal-sub">Jump instantly to any MRT Line 6 station, iconic Dhaka landmark, or scenic view</p>
+      </div>
+      <button id="teleport-close" class="modal-close-btn" type="button" title="Close (Esc / O)">&times;</button>
+    </div>
+
+    <div class="teleport-controls-row">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="teleport-search" placeholder="Search station, landmark, road..." autocomplete="off" />
+        <button id="teleport-search-clear" class="search-clear hidden" type="button">&times;</button>
+      </div>
+      <div class="teleport-tabs">
+        <button class="tab-btn active" data-filter="all">All (<span id="count-all">0</span>)</button>
+        <button class="tab-btn" data-filter="station">Stations (<span id="count-station">0</span>)</button>
+        <button class="tab-btn" data-filter="landmark">Landmarks (<span id="count-landmark">0</span>)</button>
+        <button class="tab-btn" data-filter="vantage">Viewpoints (<span id="count-vantage">0</span>)</button>
+      </div>
+    </div>
+
+    <div id="teleport-grid" class="teleport-grid">
+      <!-- Injected dynamically by main.js from ALL_TELEPORT_PLACES -->
+    </div>
+
+    <div class="modal-footer">
+      <span class="footer-hint">Tip: Selecting places in other districts automatically takes you on the metro journey!</span>
+      <span class="footer-shortcut">Shortcut: <kbd>O</kbd></span>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+<script type="module" src="/src/drive.js"></script>
+</body>
+</html>

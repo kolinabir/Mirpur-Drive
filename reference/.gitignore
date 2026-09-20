@@ -1,0 +1,6 @@
+# Look-only imagery gathered from the wider web (news galleries etc.).
+# NOT licensed for redistribution: keep it on disk, never commit it.
+# Provenance stays tracked in each refonly/SOURCES.md or CREDITS.md.
+**/refonly/*
+!**/refonly/SOURCES.md
+!**/refonly/CREDITS.md

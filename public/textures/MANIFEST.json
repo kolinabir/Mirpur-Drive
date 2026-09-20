@@ -1,0 +1,274 @@
+{
+  "materials": [
+    {
+      "slug": "plaster-weathered-1",
+      "assetId": "Plaster007",
+      "source": "https://ambientcg.com/a/Plaster007",
+      "license": "CC0",
+      "maps": {
+        "color": "plaster-weathered-1/color.jpg",
+        "normal": "plaster-weathered-1/normal.jpg",
+        "roughness": "plaster-weathered-1/roughness.jpg",
+        "ao": "plaster-weathered-1/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Primary painted-plaster wall base for the facade atlas (old, broken paint)"
+    },
+    {
+      "slug": "plaster-weathered-2",
+      "assetId": "PaintedPlaster017",
+      "source": "https://ambientcg.com/a/PaintedPlaster017",
+      "license": "CC0",
+      "maps": {
+        "color": "plaster-weathered-2/color.jpg",
+        "normal": "plaster-weathered-2/normal.jpg",
+        "roughness": "plaster-weathered-2/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Secondary painted-plaster wall variant for facade atlas colour variety"
+    },
+    {
+      "slug": "concrete-stained-1",
+      "assetId": "Concrete036",
+      "source": "https://ambientcg.com/a/Concrete036",
+      "license": "CC0",
+      "maps": {
+        "color": "concrete-stained-1/color.jpg",
+        "normal": "concrete-stained-1/normal.jpg",
+        "roughness": "concrete-stained-1/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Raw/unpainted concrete wall base; also reused for the metro viaduct piers"
+    },
+    {
+      "slug": "concrete-stained-2",
+      "assetId": "Concrete044D",
+      "source": "https://ambientcg.com/a/Concrete044D",
+      "license": "CC0",
+      "maps": {
+        "color": "concrete-stained-2/color.jpg",
+        "normal": "concrete-stained-2/normal.jpg",
+        "roughness": "concrete-stained-2/roughness.jpg",
+        "ao": "concrete-stained-2/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Damaged/stained concrete variant; roof slab base texture"
+    },
+    {
+      "slug": "brick-old",
+      "assetId": "Bricks094",
+      "source": "https://ambientcg.com/a/Bricks094",
+      "license": "CC0",
+      "maps": {
+        "color": "brick-old/color.jpg",
+        "normal": "brick-old/normal.jpg",
+        "roughness": "brick-old/roughness.jpg",
+        "ao": "brick-old/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Exposed old red brick wall (unpainted brick facade cell)"
+    },
+    {
+      "slug": "corrugated-metal",
+      "assetId": "CorrugatedSteel009",
+      "source": "https://ambientcg.com/a/CorrugatedSteel009",
+      "license": "CC0",
+      "maps": {
+        "color": "corrugated-metal/color.jpg",
+        "normal": "corrugated-metal/normal.jpg",
+        "roughness": "corrugated-metal/roughness.jpg",
+        "ao": "corrugated-metal/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Corrugated tin roofing/shutter and shopfront panels"
+    },
+    {
+      "slug": "asphalt-patched",
+      "assetId": "Road012B",
+      "source": "https://ambientcg.com/a/Road012B",
+      "license": "CC0",
+      "maps": {
+        "color": "asphalt-patched/color.jpg",
+        "normal": "asphalt-patched/normal.jpg",
+        "roughness": "asphalt-patched/roughness.jpg",
+        "ao": "asphalt-patched/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Patched, cracked road asphalt for street surfaces"
+    },
+    {
+      "slug": "paving-bricks",
+      "assetId": "PavingStones142",
+      "source": "https://ambientcg.com/a/PavingStones142",
+      "license": "CC0",
+      "maps": {
+        "color": "paving-bricks/color.jpg",
+        "normal": "paving-bricks/normal.jpg",
+        "roughness": "paving-bricks/roughness.jpg",
+        "ao": "paving-bricks/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Footpath / pavement paving-stone surface"
+    },
+    {
+      "slug": "dirt-ground",
+      "assetId": "Ground107",
+      "source": "https://ambientcg.com/a/Ground107",
+      "license": "CC0",
+      "maps": {
+        "color": "dirt-ground/color.jpg",
+        "normal": "dirt-ground/normal.jpg",
+        "roughness": "dirt-ground/roughness.jpg",
+        "ao": "dirt-ground/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Bare dirt/rubble ground for lots and unpaved shoulders"
+    },
+    {
+      "slug": "rust-metal",
+      "assetId": "Metal022",
+      "source": "https://ambientcg.com/a/Metal022",
+      "license": "CC0",
+      "maps": {
+        "color": "rust-metal/color.jpg",
+        "normal": "rust-metal/normal.jpg",
+        "roughness": "rust-metal/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Rusted metal for railings, signage frames, AC brackets and other small props"
+    },
+    {
+      "slug": "concrete-smooth-pale",
+      "assetId": "Concrete046",
+      "source": "https://ambientcg.com/a/Concrete046",
+      "license": "CC0",
+      "maps": {
+        "color": "concrete-smooth-pale/color.jpg",
+        "normal": "concrete-smooth-pale/normal.jpg",
+        "roughness": "concrete-smooth-pale/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Smooth pale cast-concrete piers, girders and viaduct parapets; recommended tint #C9C7BD, repeat 3 m"
+    },
+    {
+      "slug": "granite-dark-polished",
+      "assetId": "Granite005A",
+      "source": "https://ambientcg.com/a/Granite005A",
+      "license": "CC0",
+      "maps": {
+        "color": "granite-dark-polished/color.jpg",
+        "normal": "granite-dark-polished/normal.jpg",
+        "roughness": "granite-dark-polished/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Platform floor: dark grey polished granite tiles; recommended tint #4F5250, repeat 0.6 m"
+    },
+    {
+      "slug": "tiles-light-stone",
+      "assetId": "Tiles078",
+      "source": "https://ambientcg.com/a/Tiles078",
+      "license": "CC0",
+      "maps": {
+        "color": "tiles-light-stone/color.jpg",
+        "normal": "tiles-light-stone/normal.jpg",
+        "roughness": "tiles-light-stone/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Concourse floor: light grey/cream large stone tiles, matte-satin; recommended tint #EDEAE4, repeat 0.8 m"
+    },
+    {
+      "slug": "steel-brushed",
+      "assetId": "Metal009",
+      "source": "https://ambientcg.com/a/Metal009",
+      "license": "CC0",
+      "maps": {
+        "color": "steel-brushed/color.jpg",
+        "normal": "steel-brushed/normal.jpg",
+        "roughness": "steel-brushed/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Brushed stainless PSDs, handrails, lift doors, gates; recommended tint #C9CDCE, repeat 1 m"
+    },
+    {
+      "slug": "aluminium-brushed",
+      "assetId": "Metal051C",
+      "source": "https://ambientcg.com/a/Metal051C",
+      "license": "CC0",
+      "maps": {
+        "color": "aluminium-brushed/color.jpg",
+        "normal": "aluminium-brushed/normal.jpg",
+        "roughness": "aluminium-brushed/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Strip ceiling baffles, escalator cladding; recommended tint #E4E6E6, repeat 1 m"
+    },
+    {
+      "slug": "panel-cream",
+      "assetId": "Concrete046",
+      "source": "https://ambientcg.com/a/Concrete046",
+      "license": "CC0",
+      "maps": {
+        "color": "panel-cream/color.jpg",
+        "normal": "panel-cream/normal.jpg",
+        "roughness": "panel-cream/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Concourse wall panels: smooth cream large-format panels, near-uniform (second copy of Concrete046, tint applied in code); recommended tint #EDEAE4, repeat 0.8 m"
+    },
+    {
+      "slug": "plaster-painted-grey",
+      "assetId": "PaintedPlaster009",
+      "source": "https://ambientcg.com/a/PaintedPlaster009",
+      "license": "CC0",
+      "maps": {
+        "color": "plaster-painted-grey/color.jpg",
+        "normal": "plaster-painted-grey/normal.jpg",
+        "roughness": "plaster-painted-grey/roughness.jpg",
+        "ao": "plaster-painted-grey/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Pale painted render/plaster base for Pallabi-area apartment blocks; tinted to pale blue-grey (#aab8c0) or cream via WALL_PALETTE multiply"
+    },
+    {
+      "slug": "tiles-ceramic-small",
+      "assetId": "Tiles022",
+      "source": "https://ambientcg.com/a/Tiles022",
+      "license": "CC0",
+      "maps": {
+        "color": "tiles-ceramic-small/color.jpg",
+        "normal": "tiles-ceramic-small/normal.jpg",
+        "roughness": "tiles-ceramic-small/roughness.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "Small glazed ceramic tile cladding on commercial/institutional buildings near Pallabi station"
+    },
+    {
+      "slug": "plaster-white-clean",
+      "assetId": "PaintedPlaster014",
+      "source": "https://ambientcg.com/a/PaintedPlaster014",
+      "license": "CC0",
+      "maps": {
+        "color": "plaster-white-clean/color.jpg",
+        "normal": "plaster-white-clean/normal.jpg",
+        "roughness": "plaster-white-clean/roughness.jpg",
+        "ao": "plaster-white-clean/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "White painted plaster with slight brick showing at edges; older Uttara South residential stock (1990s-2000s buildings, still white-dominant but some wear)"
+    },
+    {
+      "slug": "plaster-white-aged",
+      "assetId": "PaintedPlaster015",
+      "source": "https://ambientcg.com/a/PaintedPlaster015",
+      "license": "CC0",
+      "maps": {
+        "color": "plaster-white-aged/color.jpg",
+        "normal": "plaster-white-aged/normal.jpg",
+        "roughness": "plaster-white-aged/roughness.jpg",
+        "ao": "plaster-white-aged/ao.jpg"
+      },
+      "sizePx": 1024,
+      "suggestedUse": "White painted plaster slightly more worn than PP014; for Uttara South buildings showing light ageing while keeping clean white base"
+    }
+  ]
+}

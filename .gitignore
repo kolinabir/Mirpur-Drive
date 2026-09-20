@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+
+# Raw Overpass/OSM dumps: large (~70 MB combined), machine-fetched, and
+# fully regenerable — re-run the queries in data/query*.overpassql to get
+# them back. The derived data actually used by the game (public/scene*.json)
+# is committed. See README.md "Rebuilding the map data".
+data/*.osm.json
+
+# tools/fetch-heights.mjs output: regenerable from data/*.osm.json + the
+# Open Buildings raster, and only an intermediate input to `npm run data`
+# (the game itself only ever reads public/scene*.json).
+data/heights-*.json
+
+# Raw Open Buildings COG tiles fetched by tools/fetch-heights.mjs, cached on
+# disk so re-runs don't re-hit the network. Large, machine-fetched, public
+# data — never commit it.
+.cache/
