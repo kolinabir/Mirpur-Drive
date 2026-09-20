@@ -1,0 +1,20 @@
+# Cloudflare cache rules (copied into dist/ by Vite). Netlify's equivalents
+# are in netlify.toml.
+
+# Vite-hashed JS/CSS: the filename changes whenever the content does.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Unhashed static assets: long-lived, but not immutable, so a replaced
+# texture or model still reaches returning players.
+/textures/*
+  Cache-Control: public, max-age=2592000
+/models/*
+  Cache-Control: public, max-age=2592000
+/basis/*
+  Cache-Control: public, max-age=2592000
+
+# Scene / map data changes with every data rebuild: cache for a day and
+# let the ETag turn repeat visits into 304s.
+/*.json
+  Cache-Control: public, max-age=86400

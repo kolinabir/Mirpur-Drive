@@ -80,7 +80,11 @@ npm run build
 ```
 
 Outputs a fully static site to `dist/` — no server-side code, nothing to
-configure. Deploys to Netlify (or any static host) with:
+configure. It deploys to **Cloudflare** out of the box: connect the repo in
+Workers & Pages with build command `npm run build` and deploy command
+`npx wrangler deploy` (`wrangler.jsonc` points it at `dist/`, cache rules are
+in `public/_headers`). Netlify (`netlify.toml`) or any other static host
+works too:
 
 ```
 Build command:      npm run build

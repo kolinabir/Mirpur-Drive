@@ -19,3 +19,6 @@ data/heights-*.json
 # disk so re-runs don't re-hit the network. Large, machine-fetched, public
 # data — never commit it.
 .cache/
+
+# Wrangler (Cloudflare) local state
+.wrangler/
