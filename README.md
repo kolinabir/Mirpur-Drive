@@ -11,7 +11,9 @@ pulled from OpenStreetMap. The metro stations, the Pallabi/Mirpur 12
 streetscape and its shopfronts are modelled against the owner's own
 photographs and Google Street View of the real place, not invented.
 
-![Street view of the Mirpur corridor](screenshots/p10-street-busy.jpg)
+![Driving the Mirpur corridor under the MRT Line 6 viaduct](screenshots/gallery/drive.jpg)
+
+**[Screenshots](#screenshots)** · **[Controls](#controls)** · **[Contributing](#contributing)**
 
 ## Features
 
@@ -44,6 +46,21 @@ photographs and Google Street View of the real place, not invented.
 - **Touch controls** for phones and tablets.
 - **Destructible streetlights** — clip one with the car at speed and it
   topples and stays down; it does not stop the car.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><a href="screenshots/gallery/metro-platform.jpg"><img src="screenshots/gallery/metro-platform.jpg" alt="On the platform: train berthed at the platform screen doors"></a><br><sub>On the platform: train berthed at the platform screen doors</sub></td>
+<td width="50%"><a href="screenshots/gallery/metro-viaduct.jpg"><img src="screenshots/gallery/metro-viaduct.jpg" alt="Mirpur 11 — viaduct, piers and station from the street"></a><br><sub>Mirpur 11 — viaduct, piers and station from the street</sub></td>
+</tr>
+<tr>
+<td width="50%"><a href="screenshots/gallery/stadium.jpg"><img src="screenshots/gallery/stadium.jpg" alt="Sher-e-Bangla National Cricket Stadium"></a><br><sub>Sher-e-Bangla National Cricket Stadium</sub></td>
+<td width="50%"><a href="screenshots/gallery/night.jpg"><img src="screenshots/gallery/night.jpg" alt="Night: lit windows, streetlights and stars"></a><br><sub>Night: lit windows, streetlights and stars</sub></td>
+</tr>
+</table>
+
+More in **[SCREENSHOTS.md](SCREENSHOTS.md)** — streets, stations, landmarks, dusk and night.
 
 ## Quick start
 
