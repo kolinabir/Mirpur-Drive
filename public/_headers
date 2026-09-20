@@ -18,3 +18,13 @@
 # let the ETag turn repeat visits into 304s.
 /*.json
   Cache-Control: public, max-age=86400
+
+# Keep search engines on the real domain: the *.pages.dev and preview copies
+# serve identical content and must not compete with it.
+https://mirpur-drive.pages.dev/*
+  X-Robots-Tag: noindex
+https://:branch.mirpur-drive.pages.dev/*
+  X-Robots-Tag: noindex
+
+/site.webmanifest
+  Content-Type: application/manifest+json
