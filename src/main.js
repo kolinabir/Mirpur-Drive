@@ -7,6 +7,7 @@ import { createTransitHud } from './transit-hud.js';
 
 import * as THREE from 'three';
 import { loadFacadeTextures } from './facade-loader.js';
+import { createPerfGovernor } from './perf-governor.js';
 import { buildBuildings, buildCollisionGrid, updateBuildingLOD, ingestSceneColliders, resolveCollision } from './city.js';
 import { buildNeighbourhoodDetails } from './neighbourhood-details.js';
 import { buildWorldDetails } from './world-details.js';
@@ -267,12 +268,29 @@ async function main() {
   // Renderer
   // -------------------------------------------------------------------------
   const canvas = document.getElementById('view');
+  // The frame is fill-rate bound (see src/perf-governor.js for the numbers),
+  // so pixels are budgeted deliberately:
+  //  - 4x MSAA only on low-DPI screens, where edges actually stair-step. On a
+  //    2x display the pixels are already finer than the eye resolves at arm's
+  //    length, and MSAA there is pure cost on every non-tile-based GPU.
+  //  - the pixel ratio starts at 1.5x at most and is then driven per machine
+  //    by the governor, between PIXEL_RATIO_MIN and that cap.
+  // `?aa=0|1` and `?res=fixed` override both for A/B testing.
+  const dpr = window.devicePixelRatio || 1;
+  const wantAA = params.has('aa') ? params.get('aa') !== '0' : dpr < 1.5;
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: wantAA,
     powerPreference: 'high-performance',
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  const PIXEL_RATIO_MAX = Math.min(dpr, 1.5);
+  const PIXEL_RATIO_MIN = Math.min(PIXEL_RATIO_MAX, dpr >= 2 ? 0.8 : 0.7);
+  renderer.setPixelRatio(PIXEL_RATIO_MAX);
+  const perfGovernor = createPerfGovernor(renderer, {
+    max: PIXEL_RATIO_MAX,
+    min: PIXEL_RATIO_MIN,
+    enabled: params.get('res') !== 'fixed',
+  });
   renderer.shadowMap.enabled = false;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1557,6 +1575,9 @@ async function main() {
 
     frames++;
     const frameAt = performance.now();
+    // Loading screens and the intro render a different, cheaper view; only
+    // let real gameplay frames steer the resolution.
+    if (!hud.classList.contains('hidden')) perfGovernor.tick(frameAt);
     worstMs = Math.max(worstMs, frameAt - lastFrameAt);
     lastFrameAt = frameAt;
     if (frameAt - fpsWindowStart >= 500) {
@@ -1570,7 +1591,7 @@ async function main() {
       const compactStats = window.innerWidth <= 760 || document.body.classList.contains('touch-game');
       statsEl.textContent = compactStats
         ? `${fps} FPS`
-        : `${fps} FPS  ·  worst ${Math.round(worstMs)} ms  ·  ${info.calls} draws  ·  ${(info.triangles / 1000).toFixed(0)}k tris`;
+        : `${fps} FPS  ·  worst ${Math.round(worstMs)} ms  ·  ${info.calls} draws  ·  ${(info.triangles / 1000).toFixed(0)}k tris  ·  ${perfGovernor.ratio.toFixed(2)}x`;
       statsEl.dataset.level = fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad';
       worstMs = 0;
       locationEl.textContent = lm.distance < 3000 ? `${lm.distance} m from ${lm.name}` : '';

@@ -174,6 +174,69 @@ export class MapRaster {
     }
   }
 
+  /**
+   * Coarse spatial index (GRID m cells -> building / road indices), built on
+   * first use. A patch regen used to walk all ~30k footprints and every road
+   * to find the few hundred in range, then fill them as ONE path — a 44 ms
+   * stall every 150 m of travel, i.e. a visible hitch every few seconds in
+   * the car. With the index the regen only touches the cells under the patch.
+   */
+  _index() {
+    if (this._grid) return this._grid;
+    const GRID = 100;
+    const cells = new Map();
+    const key = (cx, cz) => cx * 65536 + cz;
+    const add = (kind, i, minX, minZ, maxX, maxZ) => {
+      for (let cx = Math.floor(minX / GRID); cx <= Math.floor(maxX / GRID); cx++) {
+        for (let cz = Math.floor(minZ / GRID); cz <= Math.floor(maxZ / GRID); cz++) {
+          const k = key(cx, cz);
+          let cell = cells.get(k);
+          if (!cell) cells.set(k, (cell = { b: [], r: [] }));
+          cell[kind].push(i);
+        }
+      }
+    };
+    this.scene.buildings.forEach((bld, i) => {
+      const n = bld.p.length / 2;
+      if (n < 3) return;
+      let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+      for (let j = 0; j < n; j++) {
+        const x = bld.p[j * 2], z = bld.p[j * 2 + 1];
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+      add('b', i, minX, minZ, maxX, maxZ);
+    });
+    this.scene.roads.forEach((r, i) => {
+      if (r.rank < 1) return;
+      // Per segment, so a long road only lands in the cells it crosses.
+      for (let j = 1; j < r.pts.length; j++) {
+        const a = r.pts[j - 1], b = r.pts[j];
+        add('r', i, Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]));
+      }
+    });
+    this._grid = { GRID, cells, key };
+    return this._grid;
+  }
+
+  /** Unique building / road indices whose cells overlap the given box. */
+  _query(minX, minZ, maxX, maxZ) {
+    const { GRID, cells, key } = this._index();
+    const b = new Set();
+    const r = new Set();
+    for (let cx = Math.floor(minX / GRID); cx <= Math.floor(maxX / GRID); cx++) {
+      for (let cz = Math.floor(minZ / GRID); cz <= Math.floor(maxZ / GRID); cz++) {
+        const cell = cells.get(key(cx, cz));
+        if (!cell) continue;
+        for (const i of cell.b) b.add(i);
+        for (const i of cell.r) r.add(i);
+      }
+    }
+    return { b, r };
+  }
+
   ensureMiniPatch(x, z) {
     if (this.miniPatchOriginX != null) {
       const cx = this.miniPatchOriginX + this.MINI_PATCH_HALF;
@@ -206,12 +269,18 @@ export class MapRaster {
     nightCtx.fillStyle = PALETTE.night.ground;
     nightCtx.fillRect(0, 0, W, H);
 
-    // Buildings
+    const near = this._query(originX - pad, originZ - pad, maxX + pad, maxZ + pad);
+
+    // Buildings. Filled in batches: one path holding every footprint is far
+    // slower to rasterise than several short ones (see _buildingMask).
+    dayCtx.fillStyle = PALETTE.day.buildingPatch;
+    nightCtx.fillStyle = PALETTE.night.buildingPatch;
     dayCtx.beginPath();
     nightCtx.beginPath();
-    for (const bld of this.scene.buildings) {
+    let batched = 0;
+    for (const bi of near.b) {
+      const bld = this.scene.buildings[bi];
       const n = bld.p.length / 2;
-      if (n < 3) continue;
       let hit = false;
       for (let i = 0; i < n; i++) {
         if (inRange(bld.p[i * 2], bld.p[i * 2 + 1])) { hit = true; break; }
@@ -225,15 +294,20 @@ export class MapRaster {
         }
         ctx.closePath();
       }
+      if (++batched % 128 === 0) {
+        dayCtx.fill();
+        nightCtx.fill();
+        dayCtx.beginPath();
+        nightCtx.beginPath();
+      }
     }
-    dayCtx.fillStyle = PALETTE.day.buildingPatch;
     dayCtx.fill();
-    nightCtx.fillStyle = PALETTE.night.buildingPatch;
     nightCtx.fill();
 
     // Roads
-    for (const r of this.scene.roads) {
-      if (r.rank < 1) continue;
+    // Scene order, so wider roads still paint over the lanes beneath them.
+    for (const ri of [...near.r].sort((a, b) => a - b)) {
+      const r = this.scene.roads[ri];
       let hit = false;
       for (const p of r.pts) {
         if (inRange(p[0], p[1])) { hit = true; break; }
