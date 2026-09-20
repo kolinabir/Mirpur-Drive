@@ -124,3 +124,16 @@ body #gateway button { border-radius: 0; }
   body #start button, body #loading #loading-bar { transition: none !important; }
   body #start button:hover { transform: none !important; }
 }
+
+/* GitHub links: loading screen, start footer, HUD bar, help modal. The HUD is
+   pointer-events:none as a whole, so the link opts back in like the buttons. */
+.gh-link { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; pointer-events: auto; cursor: pointer; opacity: .85; transition: color .15s ease, opacity .15s ease; }
+.gh-link:hover, .gh-link:focus-visible { color: #e9c85e; opacity: 1; }
+.gh-link svg { flex: none; }
+.gh-link--loading { position: absolute; left: 0; right: 0; bottom: max(22px, env(safe-area-inset-bottom)); justify-content: center; font: 600 10px/1.5 system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #a4b8aa; }
+.modal-footer .gh-link { font-size: 12px; color: #a7ada1; margin-left: auto; margin-right: 14px; }
+body.touch-game #hud #bottombar-github { display: none; }
+@media (max-width: 760px) {
+  /* The tip row wraps on phones; keep the link clear of it and shorter. */
+  .gh-link--loading { position: static; margin-top: 18px; font-size: 9px; letter-spacing: .1em; }
+}
