@@ -9,10 +9,12 @@
     "data": "node tools/build-scene.mjs",
     "data:bijoy": "node tools/build-scene.mjs --in data/bijoy.osm.json --out public/scene-bijoy.json --stations \"Agargaon,Bijoy Sarani,Farmgate\" --metro-start \"Agargaon\" --metro-end \"Farmgate\" --extra-corridors manikmia,lakeroad,bijoysarani,agargaon",
     "dev": "vite",
-    "build": "vite build",
+    "build": "node tools/build-site-pages.mjs && vite build",
     "preview": "vite preview --port 4173",
     "smoke": "node tools/smoke-sangsad.mjs",
-    "textures:bake": "node tools/bake-facades.mjs"
+    "textures:bake": "node tools/bake-facades.mjs",
+    "pages": "node tools/build-site-pages.mjs",
+    "test": "node --test tools/test-site.mjs"
   },
   "dependencies": {
     "earcut": "^3.0.1",

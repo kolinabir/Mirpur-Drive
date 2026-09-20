@@ -34,6 +34,10 @@ expected level of detail.
    footprint rather than overlapping it (see `docs/briefs/P12-B-EXCLUDE-AND-GATE.md`).
 5. Add it to the teleport menu catalogue in `src/districts.js` so people can
    find it with `O`.
+6. Give it a page: add an entry to `tools/site-content.mjs` (what the place
+   really is, what is modelled, how to get there), drop a 1200×675 in-game
+   capture in `public/places/img/`, then `npm run pages && npm test`. The
+   rules for that copy are in `docs/SEO.md`.
 
 ## Signs and real business names
 

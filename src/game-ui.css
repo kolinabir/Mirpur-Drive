@@ -15,8 +15,8 @@ body #loading { align-items: flex-start; justify-content: center; padding: 8vh 7
 .loading-line { position: absolute; right: 4%; top: -8%; color: #ffffff05; font: 70vh/.9 Impact, 'Arial Narrow', sans-serif; }
 .loading-edition { position: absolute; top: 36px; left: 7vw; right: 7vw; display: flex; justify-content: space-between; color: #e9ece2; letter-spacing: .16em; font-size: 10px; border-bottom: 1px solid #ffffff24; padding-bottom: 18px; }
 body #loading .loading-badge { position: relative; margin: 0 0 20px; border: 0; border-radius: 0; padding: 0; background: none; font-size: 10px; letter-spacing: .22em; color: var(--game-yellow); }
-body #loading h1 { position: relative; max-width: 600px; font: 900 clamp(64px, 9vw, 128px)/.86 Impact, 'Arial Narrow', Arial, sans-serif; text-transform: uppercase; letter-spacing: -.035em; color: var(--game-white); text-shadow: 3px 4px #050908; }
-body #loading h1 .bn { display: block; font: 400 18px/1.8 'Noto Sans Bengali', sans-serif; letter-spacing: 0; margin-top: 16px; color: #b3b9ad; text-shadow: none; }
+body #loading .h1 { position: relative; max-width: 600px; font: 900 clamp(64px, 9vw, 128px)/.86 Impact, 'Arial Narrow', Arial, sans-serif; text-transform: uppercase; letter-spacing: -.035em; color: var(--game-white); text-shadow: 3px 4px #050908; }
+body #loading .h1 .bn { display: block; font: 400 18px/1.8 'Noto Sans Bengali', sans-serif; letter-spacing: 0; margin-top: 16px; color: #b3b9ad; text-shadow: none; }
 body #loading .loading-sub { position: relative; max-width: 350px; margin-top: 18px; font-size: 12px; color: #b9bdb2; line-height: 1.7; }
 body #loading .loading-box { position: absolute; bottom: 84px; left: 7vw; right: 7vw; width: auto; margin: 0; }
 body #loading .loading-status-row { margin-bottom: 14px; font-size: 11px; letter-spacing: .03em; }
@@ -87,7 +87,7 @@ body #gateway .card { border-radius: 0; border: 0; border-top: 4px solid var(--g
 body #gateway button { border-radius: 0; }
 @media (max-width: 680px) {
   body #loading { padding: 100px 26px 180px; }
-  body #loading h1 { font-size: 68px; }
+  body #loading .h1 { font-size: 68px; }
   body #loading .loading-box { left: 26px; right: 26px; bottom: 112px; }
   body #loading .loading-tips { left: 26px; right: 26px; bottom: 28px; min-height: 60px; }
   .loading-edition { left: 26px; right: 26px; }
@@ -117,7 +117,7 @@ body #gateway button { border-radius: 0; }
   body #start .start-footer, body #start .start-note { display: none; }
   body #start #begin, body #start #begin-direct { min-height: 44px; font-size: 13px; }
   body #start details { margin-top: 5px; }
-  body #loading h1 { font-size: 62px; }
+  body #loading .h1 { font-size: 62px; }
   body #loading .loading-sub { margin-top: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -137,3 +137,4 @@ body.touch-game #hud #bottombar-github { display: none; }
   /* The tip row wraps on phones; keep the link clear of it and shorter. */
   .gh-link--loading { position: static; margin-top: 18px; font-size: 9px; letter-spacing: .1em; }
 }
+.start-links { display: inline-flex; gap: 18px; }

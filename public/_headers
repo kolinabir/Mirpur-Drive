@@ -28,3 +28,9 @@ https://:branch.mirpur-drive.pages.dev/*
 
 /site.webmanifest
   Content-Type: application/manifest+json
+
+# Markdown twins of the HTML pages are for agents, not for search results.
+/*.md
+  X-Robots-Tag: noindex
+/llms.txt
+  Content-Type: text/plain; charset=utf-8

@@ -81,12 +81,12 @@ anywhere, `M` for the full map, `H` for the in-game key list.
 npm run build
 ```
 
-Outputs a fully static site to `dist/` — no server-side code, nothing to
-configure. It deploys to **Cloudflare** out of the box: connect the repo in
-Workers & Pages with build command `npm run build` and deploy command
-`npx wrangler deploy` (`wrangler.jsonc` points it at `dist/`, cache rules are
-in `public/_headers`). Netlify (`netlify.toml`) or any other static host
-works too:
+Outputs a static site to `dist/`. It is deployed on **Cloudflare Pages**
+(build command `npm run build`, output directory `dist`, `NODE_VERSION=22`):
+cache rules are in `public/_headers`, and one small Pages Function
+(`functions/_middleware.js`) serves Markdown to clients that ask for it and
+Markdown 404s — see `docs/SEO.md`. The game itself needs no server, so
+Netlify (`netlify.toml`) or any other static host works too:
 
 ```
 Build command:      npm run build
@@ -172,6 +172,9 @@ machine-fetched and fully regenerable. To rebuild them:
 | `tools/build-scene.mjs` | OpenStreetMap → `public/scene*.json` |
 | `tools/fetch-heights.mjs` | Open Buildings 2.5D Temporal → `data/heights-*.json` (optional) |
 | `tools/calibrate-heights.mjs` | Validates raster height estimators against OSM `building:levels` ground truth (optional) |
+| `tools/site-content.mjs` / `tools/build-site-pages.mjs` | Content and generator for the static pages: `/places/`, about, contact, privacy, `llms.txt`, sitemap |
+| `functions/` / `edge/` | Cloudflare Pages middleware: Markdown content negotiation |
+| `tools/test-site.mjs` | `npm test` — negotiation, middleware and generated pages |
 | `docs/` | Development history, decisions and verification logs |
 | `reference/` | Modelling reference (CC-licensed photos with credits, written observations) — not shipped |
 

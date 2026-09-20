@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/assets/*",
+    "/textures/*",
+    "/models/*",
+    "/basis/*",
+    "/audio/*",
+    "/places/img/*",
+    "/scene.json",
+    "/scene-north.json",
+    "/scene-bijoy.json",
+    "/map-overview.json",
+    "/street-pallabi.json",
+    "/og.jpg",
+    "/favicon.ico",
+    "/icon-192.png",
+    "/icon-512.png",
+    "/apple-touch-icon.png",
+    "/site.webmanifest"
+  ]
+}

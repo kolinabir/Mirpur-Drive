@@ -1,3 +1,5 @@
+# Mirpur Drive. Agents: see /llms.txt; every page also serves Markdown
+# when requested with "Accept: text/markdown".
 User-agent: *
 Allow: /
 

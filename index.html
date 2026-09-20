@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Mirpur Drive — Explore Mirpur, Dhaka in 3D | Walk, Drive, Ride MRT Line 6</title>
-<meta name="description" content="Walk, drive and ride the metro through a 3D reconstruction of Mirpur, Dhaka. Real streets from OpenStreetMap, MRT Line 6 stations, Sher-e-Bangla stadium and more. Free, in your browser, no install." />
+<title>Mirpur Drive: Explore Mirpur, Dhaka in 3D (Free Game)</title>
+<meta name="description" content="Walk, drive and ride MRT Line 6 through a 3D Mirpur, Dhaka built from real map data. Free open-world game in your browser. No download." />
 <meta name="keywords" content="Mirpur Drive, Mirpur 3D, Dhaka 3D game, Dhaka metro rail game, MRT Line 6, Mirpur 10, Mirpur 11, Pallabi, Bangladesh open world, browser driving game, মিরপুর, ঢাকা মেট্রোরেল" />
 <meta name="author" content="Abir Kolin" />
 <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -57,6 +57,40 @@
   "contentLocation": { "@type": "Place", "name": "Mirpur, Dhaka, Bangladesh", "geo": { "@type": "GeoCoordinates", "latitude": 23.8069, "longitude": 90.3687 } }
 }
 </script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://mirpurdrive.recalfy.com/#website",
+      "name": "Mirpur Drive",
+      "alternateName": "মিরপুর ড্রাইভ",
+      "url": "https://mirpurdrive.recalfy.com/",
+      "inLanguage": ["en", "bn"],
+      "publisher": { "@id": "https://mirpurdrive.recalfy.com/#org" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://mirpurdrive.recalfy.com/#org",
+      "name": "Mirpur Drive",
+      "url": "https://mirpurdrive.recalfy.com/",
+      "logo": "https://mirpurdrive.recalfy.com/icon-512.png",
+      "description": "Open-source project behind Mirpur Drive, a free browser game and 3D reconstruction of Mirpur, Dhaka.",
+      "founder": { "@type": "Person", "name": "Abir Kolin", "url": "https://github.com/kolinabir" },
+      "sameAs": ["https://github.com/kolinabir/Mirpur-Drive"],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "technical support",
+        "url": "https://github.com/kolinabir/Mirpur-Drive/issues/new/choose",
+        "availableLanguage": ["en", "bn"]
+      }
+    }
+  ]
+}
+</script>
+<link rel="alternate" type="text/markdown" href="/index.md" />
+<link rel="help" type="text/plain" href="/llms.txt" />
 <!-- Preconnect to font CDN so the TLS handshake starts immediately -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -107,11 +141,11 @@
     font: 600 11px/1 system-ui, -apple-system, sans-serif;
     letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal);
   }
-  #loading h1 {
+  #loading .h1 {
     margin: 0 0 6px; font-size: clamp(24px, 4vw, 36px); font-weight: 700;
     letter-spacing: -0.02em; color: var(--ink);
   }
-  #loading h1 .bn { font-family: "Noto Sans Bengali", system-ui; color: var(--teal); }
+  #loading .h1 .bn { font-family: "Noto Sans Bengali", system-ui; color: var(--teal); }
   .loading-sub {
     margin: 0 0 28px; color: var(--dim); font-size: 13.5px; max-width: 480px;
   }
@@ -235,7 +269,7 @@
     border: 1px solid var(--edge);
     border-radius: 14px;
   }
-  #gateway h1 { margin: 0 0 10px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  #gateway .h1 { margin: 0 0 10px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
   #gateway p { margin: 0 0 20px; color: var(--dim); font-size: 13.5px; line-height: 1.5; }
   #gateway-actions { display: flex; gap: 10px; }
   #gateway-actions button {
@@ -664,7 +698,7 @@
   <div class="loading-art" aria-hidden="true"><div class="loading-sun"></div><div class="loading-city"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="loading-rail"></div><span class="loading-line">06</span></div>
   <div class="loading-edition">DHAKA / BANGLADESH<span>FREE ROAM</span></div>
   <div class="loading-badge">PREPARING YOUR SESSION</div>
-  <h1 id="loading-main-title">Mirpur Drive <span class="bn">মিরপুর ড্রাইভ</span></h1>
+  <div class="h1" id="loading-main-title" aria-hidden="true">Mirpur Drive <span class="bn">মিরপুর ড্রাইভ</span></div>
   <div class="loading-sub" id="loading-sub-text">Open World Simulation along MRT Line 6, Dhaka</div>
 
   <div class="loading-box">
@@ -718,12 +752,12 @@
     </details>
 
   </div>
-  <div class="start-footer"><span>WALK. DRIVE. RIDE.</span><a class="gh-link" href="https://github.com/kolinabir/Mirpur-Drive" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg> OPEN SOURCE ON GITHUB</a><span>MIRPUR / MRT LINE 6</span></div>
+  <div class="start-footer"><span>WALK. DRIVE. RIDE.</span><a class="gh-link" href="https://github.com/kolinabir/Mirpur-Drive" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg> OPEN SOURCE ON GITHUB</a><span class="start-links"><a class="gh-link" href="/places/">PLACES</a><a class="gh-link" href="/about/">ABOUT</a><a class="gh-link" href="/privacy/">PRIVACY</a></span></div>
 </div>
 
 <div id="gateway" class="hidden">
   <div class="card">
-    <h1 id="gateway-title">Through train</h1>
+    <h2 class="h1" id="gateway-title">Through train</h2>
     <p id="gateway-body"></p>
     <div id="gateway-actions">
       <button id="gateway-ride" type="button">Ride</button>
@@ -896,8 +930,9 @@
 <script type="module" src="/src/drive.js"></script>
 <noscript>
   <div style="max-width:40rem;margin:4rem auto;padding:0 1.5rem;font:16px/1.6 system-ui,sans-serif;color:#eee">
-    <h1>Mirpur Drive</h1>
+    <p style="font-size:1.6em;font-weight:800;margin:0">Mirpur Drive</p>
     <p>Mirpur Drive is a free, open-source 3D reconstruction of the Mirpur corridor in Dhaka, Bangladesh, that runs in your browser. Walk the real street grid, drive a car, and ride MRT Line 6 between Pallabi, Mirpur 11, Mirpur 10, Uttara South, Agargaon, Bijoy Sarani and Farmgate. Landmarks include Sher-e-Bangla National Cricket Stadium, the Mirpur 10 foot over bridge, Benarasi Palli and Jatiya Sangsad Bhaban.</p>
+    <p>Browse the <a href="/places/" style="color:#22c55e">stations and landmarks you can visit</a>.</p>
     <p>The game needs JavaScript and WebGL. Source code: <a href="https://github.com/kolinabir/Mirpur-Drive" style="color:#22c55e">github.com/kolinabir/Mirpur-Drive</a>.</p>
   </div>
 </noscript>
