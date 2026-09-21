@@ -1,6 +1,6 @@
 /** @typedef {{ x: number, z: number }} Position */
 /**
- * @param {{ host: HTMLElement, position: Position, location: string }} options
+ * @param {{ host: HTMLElement, position: Position, location: string | (() => string) }} options
  */
 export function createFirstJourney({ host, position, location }) {
   const root = document.createElement('aside');
@@ -36,7 +36,7 @@ export function createFirstJourney({ host, position, location }) {
     if (stage === next) return;
     stage = next;
     step.textContent = next === 3 ? 'You’re ready' : `First journey · 0${next + 1} / 03`;
-    const titles = [`Welcome to ${location}`, 'Take the wheel', 'Find your rhythm', 'The city is yours'];
+    const titles = [`Welcome to ${typeof location === 'function' ? location() : location}`, 'Take the wheel', 'Find your rhythm', 'The city is yours'];
     title.textContent = titles[next];
     const instructions = document.body.classList.contains('touch-game') ? [
       'Use the left pad to walk. Drag the view to look around.',

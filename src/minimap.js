@@ -18,6 +18,7 @@ import { MapRaster } from './map/map-raster.js';
 import { MinimapView } from './map/minimap-view.js';
 import { FullmapView } from './map/fullmap-view.js';
 import { resolveDistrict } from './districts.js';
+import { tr } from './i18n.js';
 
 export class Minimap {
   /**
@@ -232,8 +233,15 @@ export class Minimap {
 
     if (street !== this._currentStreetName) {
       this._currentStreetName = street;
-      this.streetHudEl.innerHTML = `<span class="street-name">${street}</span><span class="district-name">${districtName}</span>`;
+      // Street names have no Bangla in the OSM extract yet; the district does.
+      this.streetHudEl.innerHTML = `<span class="street-name">${tr(street)}</span><span class="district-name">${tr(districtName)}</span>`;
     }
+  }
+
+  /** Language changed: redraw the street banner on the next check. */
+  refreshLabels() {
+    this._currentStreetName = null;
+    this._lastStreetCheck = 0;
   }
 
   _updateGpsHud() {

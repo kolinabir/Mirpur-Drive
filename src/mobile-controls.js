@@ -13,7 +13,7 @@ export function prefersTouchControls() {
 }
 
 export function isGameplayBlocked() {
-  return ['start', 'loading', 'gateway', 'help-modal', 'teleport-modal', 'lift-menu', 'street-menu', 'street-journal'].some((id) => {
+  return ['start', 'loading', 'gateway', 'help-modal', 'teleport-modal', 'lift-menu', 'street-menu', 'street-journal', 'game-menu'].some((id) => {
     const element = document.getElementById(id);
     return element && !element.classList.contains('hidden');
   }) || !!document.querySelector('#minimap.expanded');

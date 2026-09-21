@@ -23,8 +23,9 @@ import * as THREE from 'three';
 import { touchInput, isGameplayBlocked, isEditableTarget } from './mobile-controls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { resolveCollision } from './city.js';
-import { ensureAudioContext } from './audio.js';
+import { ensureAudioContext, setMuted as setSharedMuted } from './audio.js';
 import { loadModel, cloneModel } from './models.js';
+import { tr } from './i18n.js';
 import { buildCoupeBody, buildCoupeWheel } from './car-body.js';
 import { createCarEnvironment } from './car-environment.js';
 
@@ -787,7 +788,8 @@ function playHorn(on) {
 
 function setMuted(next) {
   muted = next;
-  if (audio) audio.master.gain.setTargetAtTime(muted ? 0 : 0.60, audio.ctx.currentTime, 0.05);
+  // One master for the whole game (audio.js), so N and the Settings volume agree.
+  setSharedMuted(muted);
 }
 
 function stopCarAudio() {
@@ -1078,6 +1080,14 @@ function initDrive(mirpur) {
       muteBtn.textContent = muted ? 'Sound off (N)' : 'Sound on (N)';
     });
     bottombar.append(sep2, muteBtn);
+    // Language switch (Settings): relabel the button for the current state.
+    window.addEventListener('mirpur:lang', () => {
+      btn.textContent = tr(driving ? 'Exit car (V)' : 'Drive (V)');
+    });
+    window.addEventListener('mirpur:mute', (e) => {
+      muted = e.detail;
+      muteBtn.textContent = muted ? 'Sound off (N)' : 'Sound on (N)';
+    });
   }
 
   let driving = false;
@@ -1314,8 +1324,8 @@ function initDrive(mirpur) {
     player.keys.clear();
     window.dispatchEvent(new CustomEvent('mirpur:drivingchange', { detail: { driving } }));
     btn.classList.add('active');
-    btn.textContent = 'Exit car (V)';
-    if (modeEl) modeEl.textContent = 'Drive';
+    btn.textContent = tr('Exit car (V)');
+    if (modeEl) modeEl.textContent = tr('Drive');
     if (speedEl && speedEl.parentElement) speedEl.parentElement.style.display = '';
     if (sportsHudWrap) sportsHudWrap.style.display = 'block';
 
@@ -1354,8 +1364,8 @@ function initDrive(mirpur) {
     car = null;
     carMesh = null;
     btn.classList.remove('active');
-    btn.textContent = 'Drive (V)';
-    if (modeEl) modeEl.textContent = player.flying ? 'Fly' : 'Walk';
+    btn.textContent = tr('Drive (V)');
+    if (modeEl) modeEl.textContent = tr(player.flying ? 'Fly' : 'Walk');
     if (speedEl && speedEl.parentElement) speedEl.parentElement.style.display = 'none';
     if (sportsHudWrap) sportsHudWrap.style.display = 'none';
     if (driftBanner) driftBanner.style.display = 'none';
@@ -1872,14 +1882,11 @@ function initDrive(mirpur) {
     ctx.fillStyle = driveMode === 'R' ? '#ff9900' : '#00ffd5';
     ctx.fillText(driveMode, cx, cy + 40);
 
-    // Hints & Current Vehicle
-    ctx.font = '600 11px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-    ctx.fillText('SPACE Drift | C Cam | X Car', cx, cy + 68);
-
-    ctx.font = '700 10px system-ui, sans-serif';
+    // Current vehicle. The key hints that used to sit here were ~5 px tall on
+    // screen; they live in the Controls panel (H) instead.
+    ctx.font = '700 15px system-ui, sans-serif';
     ctx.fillStyle = 'rgba(0, 220, 255, 0.85)';
-    ctx.fillText(CAR_PRESETS[currentCarPresetIndex].name.toUpperCase(), cx, cy + 85);
+    ctx.fillText(CAR_PRESETS[currentCarPresetIndex].name.toUpperCase(), cx, cy + 74);
   }
 
   // -------------------------------------------------------------------------

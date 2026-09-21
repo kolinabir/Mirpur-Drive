@@ -37,6 +37,11 @@ body #start h1 .bn { font-size: 17px; margin: 16px 0 0; color: #b7bcb1; line-hei
 body #start .sub { display: none; }
 body #start .start-route { margin: 25px 0 30px; color: #b6b9af; font: 700 9px Arial, sans-serif; letter-spacing: .08em; gap: 9px; }
 body #start .start-route span { width: 12px; background: #e9c85e70; }
+body #start .start-route { flex-wrap: wrap; row-gap: 4px; }
+body #start .start-route em { font-style: normal; color: var(--game-yellow); margin-right: 4px; }
+body #start .start-route button { min-height: 28px; padding: 0 2px; border: 0; border-bottom: 1px solid #ffffff30; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: uppercase; cursor: pointer; }
+body #start .start-route button:hover, body #start .start-route button:focus-visible { color: var(--game-yellow); border-color: var(--game-yellow); }
+body #start .start-continue { margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--game-yellow); color: #d7dbd0; font-size: 11px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 body #start .start-actions { width: min(340px, 100%); display: flex; flex-direction: column; gap: 4px; }
 body #start #begin, body #start #begin-direct { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px; margin: 0; padding: 0 20px; border: 0; border-radius: 0; background: #141818df; color: #eeeee8; font: 800 16px Arial, sans-serif; letter-spacing: .04em; text-align: left; text-decoration: none; transition: background .12s, color .12s, transform .12s; cursor: pointer; }
 body #start #begin { background: var(--game-white); color: #171a17; border-left: 5px solid var(--game-yellow); padding-left: 15px; }
@@ -67,16 +72,35 @@ body .tab-btn { min-height: 38px; border: 0; border-radius: 0; color: #c1c5bc; b
 body .tab-btn.active { background: var(--game-white); color: #141714; box-shadow: inset 0 -3px var(--game-yellow); }
 body #teleport-search { border-radius: 0; padding-top: 12px; padding-bottom: 12px; }
 body .teleport-grid { gap: 2px; padding: 16px 24px; }
-body .place-card { border: 0; border-left: 3px solid transparent; border-radius: 0; background: #ffffff05; padding: 17px; transition: background .12s; }
-body .place-card:hover, body .place-card:focus-visible { background: #343d33; border-left-color: var(--game-yellow); transform: none; }
+body .teleport-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-content: start; }
+body .place-group { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; padding: 12px 2px 6px; color: #969f94; font-size: 10px; letter-spacing: .06em; }
+body .place-group:first-child { padding-top: 0; }
+body .place-group b { color: var(--game-yellow); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+body .place-card { display: grid; grid-template-columns: 56px 1fr; grid-template-rows: 1fr auto; gap: 8px 14px; width: 100%; text-align: left; font: inherit; color: inherit; border: 0; border-left: 3px solid transparent; border-radius: 0; background: #ffffff05; padding: 14px; transition: background .12s; cursor: pointer; }
+body .place-card.is-metro { background: #ffffff03; }
+body .place-card:hover, body .place-card:focus-visible { background: #343d33; border-left-color: var(--game-yellow); transform: none; outline: none; }
+body .place-locator { width: 56px; height: 56px; background: #0c110f; }
+body .place-locator .track { fill: none; stroke: #6f7a6c; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+body .place-locator .stop { fill: #0c110f; stroke: #9aa595; stroke-width: 1; }
+body .place-locator .you { fill: #fff; }
+body .place-locator .mark { fill: var(--game-yellow); stroke: #0c110f; stroke-width: 1.5; }
+body .place-card.is-metro .place-locator .mark { fill: #7ec8e0; }
+body .place-body { min-width: 0; }
 body .place-icon { display: none; }
 body .place-name { text-transform: uppercase; letter-spacing: .035em; font-size: 12px; }
-body .place-bn { color: #b4bda5; }
-body .district-pill { border-radius: 0; background: none; padding-left: 0; font-size: 9px; }
+html[data-lang="bn"] body .place-name { font: 700 14px 'Noto Sans Bengali', sans-serif; letter-spacing: 0; }
+body .place-bn { color: #b4bda5; margin-bottom: 4px; }
+body .place-card-footer { grid-column: 1 / -1; margin-top: 0; }
+body .district-pill { border-radius: 0; background: none; padding-left: 0; font-size: 10px; font-variant-numeric: tabular-nums; }
 body .district-pill.is-active { color: var(--game-yellow); border: 0; background: none; }
 body .teleport-action-btn { border: 0; border-radius: 0; background: #ffffff0e; color: #dedfd6; padding: 6px 10px; }
+body .place-card.is-metro .teleport-action-btn { color: #a9d9e8; }
 body .place-card:hover .teleport-action-btn { background: var(--game-yellow); color: #121712; }
-body .help-grid { gap: 2px; }
+body .help-tabs { display: flex; padding: 14px 24px 0; }
+body .help-grid { gap: 2px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body .help-card[data-tab="foot"] .help-section:not([data-help="foot"], [data-help="general"]),
+body .help-card[data-tab="drive"] .help-section:not([data-help="drive"], [data-help="general"]),
+body .help-card[data-tab="metro"] .help-section:not([data-help="metro"], [data-help="general"]) { display: none; }
 body .help-section { border: 0; border-radius: 0; padding: 20px; background: #ffffff04; }
 body .help-section h3 { color: var(--game-yellow); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
 body .help-keys { font-size: 12px; gap: 12px; }
@@ -102,6 +126,7 @@ body #gateway button { border-radius: 0; }
   body .modal-header .bn { display: none; }
   body .modal-header h2 { font-size: 32px; }
   body .teleport-controls-row, body .teleport-grid, body .help-grid { padding: 12px; }
+  body .help-tabs { padding: 12px 12px 0; }
   body .teleport-tabs { width: 100%; }
   body .tab-btn { flex: 1; padding: 8px; font-size: 10px; }
   body .help-grid { grid-template-columns: 1fr; }

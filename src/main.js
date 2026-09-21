@@ -12,7 +12,7 @@ import { buildBuildings, buildCollisionGrid, updateBuildingLOD, ingestSceneColli
 import { buildNeighbourhoodDetails } from './neighbourhood-details.js';
 import { buildWorldDetails } from './world-details.js';
 import { buildLandmarks, buildStreetFrontage } from './landmarks.js';
-import { ensureAudioContext } from './audio.js';
+import { setVolume, ensureAudioContext } from './audio.js';
 import { createWorldAudio } from './worldaudio.js';
 import { createDestructibles } from './destructibles.js';
 import { buildStreets } from './streets.js';
@@ -27,6 +27,8 @@ import { Minimap } from './minimap.js';
 import { createWalkableRegistry } from './walkable.js';
 import { createInteriorSystem } from './interior.js';
 import { createStationLife } from './stationlife.js';
+import { createGameMenu } from './game-menu.js';
+import { tr, num, localName, distanceFrom, applyI18n, getLang } from './i18n.js';
 import { DISTRICTS, resolveDistrict, travelTo, gatewayAt, gatewayJump, districtForCoord, findStationNear, ALL_DISTRICT_STATIONS, ALL_TELEPORT_PLACES } from './districts.js';
 import { buildSangsad, SANGSAD_IDS } from './sangsad.js';
 import { createSwitchCamera } from './switch-camera.js';
@@ -850,6 +852,19 @@ async function main() {
     signBays: signsGroup.userData.namedBays,
     teleport: (x, z, name) => minimap.onTeleport?.(x, z, name),
   });
+  // "Continue" line on the start screen when this district has a save.
+  {
+    const save = streetlife.state.data;
+    const found = Object.keys(save.places || {}).length;
+    if (save.rides || save.cups || save.errandsDone || found) {
+      const line = document.createElement('p');
+      line.className = 'start-continue';
+      line.textContent = `Welcome back · ৳${save.taka} · ${found} place${found === 1 ? '' : 's'} found · ${save.rides} ride${save.rides === 1 ? '' : 's'}`;
+      document.querySelector('#start .start-actions')?.prepend(line);
+      const beginLabel = document.querySelector('#begin span');
+      if (beginLabel) beginLabel.textContent = 'CONTINUE JOURNEY';
+    }
+  }
   window.__mirpur.streetlife = streetlife; // debug hook: .world.stalls/.eateries/.places, .state.data, .rides
   // E goes to the station systems whenever they are showing a prompt, and to
   // the street otherwise; a ride in progress always owns it.
@@ -869,6 +884,28 @@ async function main() {
     'color:#f2f2ee;font:14px system-ui, sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.8);' +
     'background:rgba(20,20,20,.35);padding:4px 10px;border-radius:4px;pointer-events:none;';
   hud.appendChild(interactionEl);
+  // Every prompt line is written as "E: verb ..." by its owner; here the "E:"
+  // becomes a keycap so the one key that drives the on-foot game is obvious.
+  let interactionText = '';
+  const setInteraction = (text) => {
+    text ||= '';
+    if (text === interactionText) return;
+    interactionText = text;
+    interactionEl.replaceChildren();
+    if (!text) return;
+    const at = text.indexOf('E: ');
+    if (at < 0) {
+      interactionEl.textContent = text;
+      return;
+    }
+    const key = document.createElement('kbd');
+    key.textContent = 'E';
+    const verb = text.slice(at + 3);
+    interactionEl.append(text.slice(0, at), key, verb.charAt(0).toUpperCase() + verb.slice(1));
+    interactionEl.classList.remove('pop');
+    void interactionEl.offsetWidth; // restart the fade-in for a new prompt
+    interactionEl.classList.add('pop');
+  };
 
   // PRE-WARM THE SPAWN TILES. updateBuildingLOD builds at most ONE tile per
   // call, so arriving in a fresh area shows bare ground + roads + viaduct
@@ -944,7 +981,31 @@ async function main() {
   }
 
   // Dynamic Start Card & HUD copy for the active district
-  document.querySelector('.start-route').textContent = district.quickTravel.filter(Boolean).slice(0, 3).join(' / ').toUpperCase();
+  // The route line doubles as a spawn picker: each stop is a button that
+  // drops the player at that station and starts free roam.
+  /** @type {string | null} station picked on the start screen, for the welcome card */
+  let startStationName = null;
+  const startRouteEl = document.querySelector('.start-route');
+  startRouteEl.replaceChildren();
+  startRouteEl.setAttribute('aria-label', 'Start at a station');
+  const startLabel = document.createElement('em');
+  startLabel.textContent = 'Start at';
+  startRouteEl.append(startLabel);
+  // North to south, the order the line is ridden; the scene file is not sorted.
+  [...metro.stations].sort((a, b) => a.z - b.z).forEach((st, i) => {
+    if (i) startRouteEl.append(document.createElement('span'));
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.textContent = st.name;
+    stop.title = `Start at ${st.name}${st.bn ? ` (${st.bn})` : ''}`;
+    stop.addEventListener('click', () => {
+      const spot = stationApproach(st, -1, startYaw);
+      player.teleport(spot.x, spot.z, 1.68, spot.yaw);
+      startStationName = st.name;
+      beginJourney(false);
+    });
+    startRouteEl.append(stop);
+  });
   const startTitleEl = document.querySelector('#start h1');
   const startSubEl = document.querySelector('#start .sub');
   const topbarTitleEl = document.querySelector('#topbar .title');
@@ -1053,8 +1114,23 @@ async function main() {
   const bottombarTeleport = document.getElementById('bottombar-teleport');
   const bottombarHelp = document.getElementById('bottombar-help');
 
+  // Controls are grouped by situation and open on the one the player is in,
+  // so they read ~8 keys plus the general block instead of all 30.
+  const helpCard = helpModal?.querySelector('.help-card');
+  const setHelpTab = (tab) => {
+    if (!helpCard) return;
+    helpCard.dataset.tab = tab;
+    for (const btn of helpCard.querySelectorAll('[data-help-tab]')) btn.classList.toggle('active', btn.dataset.helpTab === tab);
+  };
+  helpCard?.addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-help-tab]')?.dataset.helpTab;
+    if (tab) setHelpTab(tab);
+  });
+
   function openHelpModal() {
     closeTeleportModal();
+    const inStation = stationlife.state.riding || player.feetY > 3;
+    setHelpTab(window.__mirpur.drive?.driving ? 'drive' : inStation ? 'metro' : 'foot');
     if (helpModal) helpModal.classList.remove('hidden');
     if (document.pointerLockElement) document.exitPointerLock();
   }
@@ -1087,27 +1163,72 @@ async function main() {
       return;
     }
 
-    for (const place of filtered) {
-      const isLocal = place.district === district.key || place.district === 'current';
-      const card = document.createElement('div');
-      card.className = 'place-card';
+    // Instant jumps first, nearest first; metro journeys to other districts
+    // after them, under their own heading, so the two kinds never look alike.
+    const isLocalPlace = (place) => place.district === district.key || place.district === 'current';
+    const distanceTo = (place) => (place.x == null ? 0 : Math.hypot(place.x - player.position.x, place.z - player.position.z));
+    const local = filtered.filter(isLocalPlace).sort((p, q) => distanceTo(p) - distanceTo(q));
+    const remote = filtered.filter((place) => !isLocalPlace(place));
+
+    const addHeading = (label, note) => {
+      const heading = document.createElement('div');
+      heading.className = 'place-group';
+      heading.innerHTML = `<b>${label}</b><span>${note}</span>`;
+      teleportGrid.appendChild(heading);
+    };
+
+    const addCard = (place, isLocal) => {
+      const metres = distanceTo(place);
+      const distance = !isLocal || place.x == null ? '' : metres < 30 ? tr('You are here') : metres < 1000 ? `${num(Math.round(metres / 10) * 10)} m` : `${num((metres / 1000).toFixed(1))} km`;
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `place-card ${isLocal ? 'is-local' : 'is-metro'}`;
       card.innerHTML = `
-        <div class="place-card-header">
-          <div class="place-icon">${place.icon || '📍'}</div>
-          <div class="place-title-group">
-            <div class="place-name">${place.name}</div>
-            <div class="place-bn">${place.bn || ''}</div>
-          </div>
+        ${placeLocatorSvg(place, isLocal)}
+        <div class="place-body">
+          <div class="place-name">${localName(place)}</div>
+          <div class="place-bn">${getLang() === 'bn' ? place.name : place.bn || ''}</div>
+          <div class="place-desc">${place.desc || ''}</div>
         </div>
-        <div class="place-desc">${place.desc || ''}</div>
         <div class="place-card-footer">
-          <span class="district-pill ${isLocal ? 'is-active' : ''}">${isLocal ? 'Local · Instant' : `${place.districtLabel} · Metro`}</span>
-          <button class="teleport-action-btn" type="button">${isLocal ? '⚡ Teleport' : '🚇 Travel (Metro)'}</button>
+          <span class="district-pill ${isLocal ? 'is-active' : ''}">${isLocal ? distance : tr(place.districtLabel)}</span>
+          <span class="teleport-action-btn">${isLocal ? `⚡ ${tr('Teleport')}` : `🚇 ${tr('Ride the metro')}`}</span>
         </div>
       `;
       card.addEventListener('click', () => executeTeleport(place));
       teleportGrid.appendChild(card);
-    }
+    };
+
+    if (local.length) addHeading(tr('Here'), 'Instant teleport · nearest first');
+    for (const place of local) addCard(place, true);
+    if (remote.length) addHeading(tr('By metro'), 'Another district · you ride MRT Line 6 there');
+    for (const place of remote) addCard(place, false);
+  }
+
+  /**
+   * Thumbnail for a Travel card: the district's stretch of MRT Line 6 with the
+   * place marked on it (and the player, when it is this district). There are
+   * no per-place photos in the repo, and this costs no bytes.
+   */
+  function placeLocatorSvg(place, isLocal) {
+    const key = place.district === 'current' ? district.key : place.district;
+    const line = ALL_DISTRICT_STATIONS.filter((st) => st.district === key);
+    const target = place.x == null ? null : { x: place.x, z: place.z };
+    const me = isLocal ? { x: player.position.x, z: player.position.z } : null;
+    const pts = [...line, target, me].filter(Boolean);
+    if (pts.length < 2) return '<svg class="place-locator" viewBox="0 0 56 56" aria-hidden="true"></svg>';
+    const minX = Math.min(...pts.map((p) => p.x));
+    const maxX = Math.max(...pts.map((p) => p.x));
+    const minZ = Math.min(...pts.map((p) => p.z));
+    const maxZ = Math.max(...pts.map((p) => p.z));
+    const scale = 40 / Math.max(maxX - minX, maxZ - minZ, 1);
+    const px = (p) => (8 + (p.x - minX) * scale + (40 - (maxX - minX) * scale) / 2).toFixed(1);
+    const pz = (p) => (8 + (p.z - minZ) * scale + (40 - (maxZ - minZ) * scale) / 2).toFixed(1);
+    const track = line.map((st) => `${px(st)},${pz(st)}`).join(' ');
+    const stops = line.map((st) => `<circle cx="${px(st)}" cy="${pz(st)}" r="1.8" class="stop"/>`).join('');
+    const you = me ? `<circle cx="${px(me)}" cy="${pz(me)}" r="2.6" class="you"/>` : '';
+    const mark = target ? `<circle cx="${px(target)}" cy="${pz(target)}" r="4" class="mark"/>` : '';
+    return `<svg class="place-locator" viewBox="0 0 56 56" aria-hidden="true"><polyline points="${track}" class="track"/>${stops}${you}${mark}</svg>`;
   }
 
   function executeTeleport(place) {
@@ -1251,7 +1372,7 @@ async function main() {
     camera.position.set(-276, 30, -1530);
     camera.lookAt(-266, 17, -1377);
   }
-  const firstJourney = createFirstJourney({ host: hud, position: player.position, location: district.key === 'north' && !arriveStation && teleportX == null ? 'Pallabi' : district.label });
+  const firstJourney = createFirstJourney({ host: hud, position: player.position, location: () => startStationName ?? (district.key === 'north' && !arriveStation && teleportX == null ? 'Pallabi' : district.label) });
   const mobileControls = createMobileControls({
     player,
     getDrive: () => window.__mirpur.drive,
@@ -1295,13 +1416,25 @@ async function main() {
     beginJourney(false);
   });
 
-  player.on('modechange', ({ locked, flying }) => {
-    document.getElementById('mode').textContent = stationlife.state.riding ? 'Metro' : window.__mirpur.drive?.driving ? 'Drive' : flying ? 'Fly' : 'Walk';
-    if (!locked) {
-      hud.classList.add('unlocked');
-    } else {
-      hud.classList.remove('unlocked');
+  const modeEl = document.getElementById('mode');
+  const refreshModeLabel = () => {
+    modeEl.textContent = tr(stationlife.state.riding ? 'Metro' : window.__mirpur.drive?.driving ? 'Drive' : player.flying ? 'Fly' : 'Walk');
+  };
+  let wasLocked = false;
+  let pauseOpenedAt = 0;
+  player.on('modechange', ({ locked }) => {
+    refreshModeLabel();
+    hud.classList.toggle('unlocked', !locked);
+    // Esc releases pointer lock before any keydown reaches the page (Chrome
+    // never delivers it), so losing the lock with nothing else on screen IS
+    // the pause gesture. Panels un-hide themselves before they unlock, which
+    // is what keeps isGameplayBlocked() true for them here.
+    if (wasLocked && !locked && !hud.classList.contains('hidden') && !isGameplayBlocked() &&
+        !player.switching && !player.inLift && !introCinematic.active && !switchCamera.active) {
+      gameMenu.openPause();
+      pauseOpenedAt = performance.now();
     }
+    wasLocked = locked;
   });
 
   canvas.addEventListener('click', () => {
@@ -1310,6 +1443,7 @@ async function main() {
     if (!gatewayEl.classList.contains('hidden')) return; // don't re-lock behind the through-service popup
     if (helpModal && !helpModal.classList.contains('hidden')) return;
     if (teleportModal && !teleportModal.classList.contains('hidden')) return;
+    if (gameMenu.open) return;
     player.requestLock();
   });
 
@@ -1318,9 +1452,41 @@ async function main() {
   let timeIndex = timeKeys.indexOf('midday');
   const applyTime = () => {
     const label = sky.setTime(timeKeys[timeIndex]);
-    timeLabel.textContent = label;
+    timeLabel.textContent = tr(label);
   };
   applyTime();
+
+  // Pause menu, Settings, Photo mode (src/game-menu.js).
+  const gameMenu = createGameMenu({
+    canvas,
+    debugMode,
+    apply: {
+      volume: setVolume,
+      sensitivity: (v) => { player.lookScale = v; },
+      quality: (q) => perfGovernor.setMax(q === 'performance' ? Math.max(PIXEL_RATIO_MIN, PIXEL_RATIO_MAX * 0.67) : PIXEL_RATIO_MAX),
+      stats: (on) => { statsEl.hidden = !on; },
+    },
+    onResume: () => player.requestLock(),
+    openHelp: openHelpModal,
+    openTravel: openTeleportModal,
+  });
+  document.getElementById('bottombar-menu')?.addEventListener('click', () => gameMenu.openPause());
+
+  const topbarTitle = document.querySelector('#topbar .title');
+  const refreshLanguage = () => {
+    applyI18n();
+    refreshModeLabel();
+    timeLabel.textContent = tr(TIMES_OF_DAY[timeKeys[timeIndex]].label);
+    if (topbarTitle) topbarTitle.textContent = tr('Mirpur corridor');
+    document.getElementById('topbar')?.setAttribute('data-eyebrow', tr('DHAKA / FREE ROAM'));
+    hud.dataset.unlockedHint = tr('Click to look around');
+    const teleportBtnEl = document.getElementById('teleport-btn');
+    if (teleportBtnEl) teleportBtnEl.textContent = tr('Travel · O');
+    minimap.refreshLabels?.();
+    if (teleportModal && !teleportModal.classList.contains('hidden')) renderTeleportGrid(currentTeleportCategory, teleportSearch ? teleportSearch.value.trim().toLowerCase() : '');
+  };
+  window.addEventListener('mirpur:lang', refreshLanguage);
+  refreshLanguage();
 
   // Quick travel and view controls.
   window.addEventListener('keydown', (e) => {
@@ -1329,6 +1495,7 @@ async function main() {
     const code = normalizeKeyCode(e);
     if (player.inLift || document.querySelector('#lift-menu:not(.hidden)')) return;
     if (code !== 'Escape' && e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName))) return;
+    if (gameMenu.open && code !== 'Escape') return;
     if (isGameplayBlocked() && !['Escape', 'KeyM', 'KeyH', 'KeyO', 'KeyT'].includes(code)) return;
 
     // P13-E: cross-district jump, on whichever digit the "Jump to" line above
@@ -1435,7 +1602,21 @@ async function main() {
         // just hide the corner minimap; the minimap now stays up.
         setMapExpanded();
         break;
+      case 'Backquote':
+        gameMenu.toggleStats();
+        break;
+      case 'KeyG':
+        if (!isGameplayBlocked()) gameMenu.togglePhotoMode();
+        break;
+      case 'Enter':
+        gameMenu.requestCapture();
+        break;
       case 'Escape':
+        if (gameMenu.open) {
+          // Firefox delivers this same Esc after the lock-loss already opened the menu.
+          if (performance.now() - pauseOpenedAt > 300) gameMenu.escape();
+          break;
+        }
         // Esc closes the through-service popup first, then the teleport modal,
         // then the help modal, then the whole-map view; the browser's own Esc
         // still releases pointer lock when neither is open.
@@ -1443,12 +1624,16 @@ async function main() {
         else if (teleportModal && !teleportModal.classList.contains('hidden')) closeTeleportModal();
         else if (helpModal && !helpModal.classList.contains('hidden')) closeHelpModal();
         else if (minimap.expanded) setMapExpanded(false);
+        else if (gameMenu.photoMode) gameMenu.togglePhotoMode();
+        else if (!player.locked) gameMenu.openPause();
         break;
       case 'KeyH':
         if (helpModal && !helpModal.classList.contains('hidden')) closeHelpModal();
         else openHelpModal();
         break;
       case 'KeyO':
+        // The modal focuses its search box; without this the same keypress types an "o" into it.
+        e.preventDefault();
         if (teleportModal && !teleportModal.classList.contains('hidden')) closeTeleportModal();
         else openTeleportModal();
         break;
@@ -1492,7 +1677,7 @@ async function main() {
         best = s;
       }
     }
-    return { name: best?.name ?? '', distance: Math.round(bestD) };
+    return { name: best?.name ?? '', bn: best?.bn, distance: Math.round(bestD) };
   }
 
   let frameCount = 0;
@@ -1553,7 +1738,7 @@ async function main() {
     const streetSuspended = hud.classList.contains('hidden') || introCinematic.active || switchCamera.active ||
       stationlife.state.riding || player.inLift || (window.__mirpur.drive?.driving ?? false);
     const streetLine = streetlife.update(dt, elapsed, streetSuspended);
-    interactionEl.textContent = streetlife.riding ? streetLine : stationlifeLine || interiorLine || streetLine;
+    setInteraction(streetlife.riding ? streetLine : stationlifeLine || interiorLine || streetLine);
     updateTransitHud();
     boundaryEl.classList.toggle('hidden', !player.leavingMirpur);
     firstJourney.update(dt, window.__mirpur.drive?.driving ?? false, isGameplayBlocked() || player.feetY > 1 || stationlife.state.riding || player.inLift || introCinematic.active || switchCamera.active || minimap.expanded || !helpModal.classList.contains('hidden') || !teleportModal.classList.contains('hidden') || !gatewayEl.classList.contains('hidden'));
@@ -1566,6 +1751,7 @@ async function main() {
     // recompiled on a later frame.
     try {
       renderer.render(scene3, camera);
+      gameMenu.afterRender();
     } catch (err) {
       if (!frame._loggedRenderError) {
         frame._loggedRenderError = true;
@@ -1589,12 +1775,12 @@ async function main() {
       const lm = nearestLandmark(player.position.x, player.position.z);
       // Phones and narrow windows get just the number; the rest won't fit.
       const compactStats = window.innerWidth <= 760 || document.body.classList.contains('touch-game');
-      statsEl.textContent = compactStats
+      if (!statsEl.hidden) statsEl.textContent = compactStats
         ? `${fps} FPS`
         : `${fps} FPS  ·  worst ${Math.round(worstMs)} ms  ·  ${info.calls} draws  ·  ${(info.triangles / 1000).toFixed(0)}k tris  ·  ${perfGovernor.ratio.toFixed(2)}x`;
       statsEl.dataset.level = fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad';
       worstMs = 0;
-      locationEl.textContent = lm.distance < 3000 ? `${lm.distance} m from ${lm.name}` : '';
+      locationEl.textContent = lm.distance < 3000 ? distanceFrom(lm.distance, lm) : '';
     }
   }
 

@@ -60,6 +60,11 @@ export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true })
     get ratio() {
       return ratio;
     },
+    /** Lower (or restore) the ceiling, e.g. the Settings "Performance" option. */
+    setMax(next) {
+      max = Math.max(min, next);
+      if (ratio > max) apply(max);
+    },
     /** Call once per rendered frame with the wall-clock time (performance.now()). */
     tick(now) {
       if (!enabled) return;

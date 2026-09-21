@@ -113,6 +113,8 @@ export class Player {
   constructor(camera, domElement, collision, walkable = null, debug = false) {
     this.camera = camera;
     this.dom = domElement;
+    /** Mouse-look multiplier from Settings (src/game-menu.js). */
+    this.lookScale = 1;
     this.collision = collision;
     // Walkable-surface registry (src/walkable.js): slabs/ramps/portals that
     // stations register. Null is fine — supportHeightAt then only ever sees
@@ -254,8 +256,8 @@ export class Player {
   }
 
   look(dx, dy) {
-    this.yaw -= dx * LOOK_SPEED;
-    this.pitch -= dy * LOOK_SPEED;
+    this.yaw -= dx * LOOK_SPEED * this.lookScale;
+    this.pitch -= dy * LOOK_SPEED * this.lookScale;
     const limit = Math.PI / 2 - 0.02;
     this.pitch = Math.max(-limit, Math.min(limit, this.pitch));
   }

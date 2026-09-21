@@ -285,7 +285,7 @@
   /* -------------------------------------------------------------------- hud */
   #hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
   #hud.unlocked::after {
-    content: "Click to look around";
+    content: attr(data-unlocked-hint);
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     padding: 8px 16px; background: var(--panel); border: 1px solid var(--edge);
     border-radius: 8px; font-size: 13px; color: var(--dim);
@@ -770,7 +770,7 @@
   <div id="crosshair"></div>
 
   <div id="hud-top-actions">
-    <button id="drive-btn" type="button">Drive · V</button>
+    <button id="drive-btn" type="button">Drive (V)</button>
     <button id="teleport-btn" type="button">Travel · O</button>
   </div>
 
@@ -779,7 +779,7 @@
     <span id="location"></span>
   </div>
 
-  <div id="stats">starting</div>
+  <div id="stats" hidden>starting</div>
 
   <canvas id="minimap" width="380" height="380" title="Click for the whole map"></canvas>
   <div id="minimap-street">
@@ -807,15 +807,13 @@
   </div>
 
   <div id="bottombar">
-    <span>Mode <b id="mode">Walk</b></span>
+    <span><span data-i18n="mode">Mode</span> <b id="mode">Walk</b></span>
     <span class="sep">|</span>
-    <span>Time <b id="time-label">Midday</b></span>
+    <span><span data-i18n="time">Time</span> <b id="time-label">Midday</b></span>
     <span class="sep">|</span>
-    <button id="bottombar-teleport" type="button"><kbd>O</kbd> Travel</button>
+    <button id="bottombar-help" type="button"><kbd>H</kbd> <span data-i18n="controls">Controls</span></button>
     <span class="sep">|</span>
-    <button id="bottombar-help" type="button"><kbd>H</kbd> Controls</button>
-    <span class="sep">|</span>
-    <a id="bottombar-github" class="gh-link" href="https://github.com/kolinabir/Mirpur-Drive" target="_blank" rel="noopener" title="Source code on GitHub (press Esc first to free the mouse)"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg> GitHub</a>
+    <button id="bottombar-menu" type="button"><kbd>Esc</kbd> <span data-i18n="menu">Menu</span></button>
   </div>
 
   <div id="boundary-warning" class="hidden">Turn back: leaving Mirpur</div>
@@ -832,52 +830,64 @@
       <button id="help-close" class="modal-close-btn" type="button" title="Close (Esc / H)">&times;</button>
     </div>
 
+    <div class="help-tabs" role="tablist">
+      <button class="tab-btn" type="button" data-help-tab="foot">On foot</button>
+      <button class="tab-btn" type="button" data-help-tab="drive">Driving</button>
+      <button class="tab-btn" type="button" data-help-tab="metro">Metro</button>
+      <button class="tab-btn" type="button" data-help-tab="all">Everything</button>
+    </div>
+
     <div class="help-grid">
-      <div class="help-section">
-        <h3>Movement &amp; camera</h3>
+      <div class="help-section" data-help="foot">
+        <h3>On foot</h3>
         <dl class="help-keys">
-          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk around</dd>
-          <dt><kbd>Space</kbd></dt><dd>Jump (while walking)</dd>
-          <dt><kbd>Shift</kbd></dt><dd>Sprint / run faster</dd>
-          <dt><kbd>Mouse</kbd></dt><dd>Look around (Click view to lock)</dd>
-          <dt><kbd>E</kbd></dt><dd>Interact: hail a rickshaw, CNG or bus &middot; cha stalls &middot; food &middot; station gates &amp; trains</dd>
-          <dt><kbd>J</kbd></dt><dd>Journal: wallet, food diary, places discovered</dd>
+          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk</dd>
+          <dt><kbd>Mouse</kbd></dt><dd>Look around (click the view to lock)</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Run</dd>
+          <dt><kbd>Space</kbd></dt><dd>Jump</dd>
+          <dt><kbd>E</kbd></dt><dd>Interact: hail a rickshaw, CNG or bus &middot; cha stalls &middot; food</dd>
+          <dt><kbd>J</kbd></dt><dd>Journal: wallet, food diary, places found</dd>
+          <dt><kbd>P</kbd></dt><dd>First / third person view</dd>
+          <dt><kbd>V</kbd></dt><dd>Get in the car</dd>
           <dt><kbd>F</kbd></dt><dd>Fly mode (<kbd>Space</kbd> up, <kbd>C</kbd> down)</dd>
         </dl>
       </div>
 
-      <div class="help-section">
-        <h3>Vehicles</h3>
+      <div class="help-section" data-help="drive">
+        <h3>Driving</h3>
         <dl class="help-keys">
-          <dt><kbd>V</kbd></dt><dd>Enter / Exit car (or click Drive)</dd>
-          <dt><kbd>W</kbd><kbd>S</kbd></dt><dd>Accelerate / Reverse</dd>
-          <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Steer left / right</dd>
-          <dt><kbd>Space</kbd></dt><dd>Handbrake &amp; Drift</dd>
-          <dt><kbd>X</kbd></dt><dd>Switch car preset</dd>
-          <dt><kbd>C</kbd></dt><dd>Cycle camera view mode</dd>
-          <dt><kbd>K</kbd></dt><dd>Sound car horn</dd>
+          <dt><kbd>W</kbd><kbd>S</kbd></dt><dd>Accelerate / brake and reverse</dd>
+          <dt><kbd>A</kbd><kbd>D</kbd></dt><dd>Steer</dd>
+          <dt><kbd>Space</kbd></dt><dd>Handbrake and drift</dd>
+          <dt><kbd>C</kbd></dt><dd>Cycle camera</dd>
+          <dt><kbd>RMB</kbd></dt><dd>Hold and drag to look around the car</dd>
+          <dt><kbd>X</kbd></dt><dd>Switch car</dd>
+          <dt><kbd>K</kbd></dt><dd>Horn</dd>
+          <dt><kbd>V</kbd></dt><dd>Get out</dd>
         </dl>
       </div>
 
-      <div class="help-section">
-        <h3>Fast travel</h3>
+      <div class="help-section" data-help="metro">
+        <h3>Metro</h3>
         <dl class="help-keys">
-          <dt><kbd>O</kbd></dt><dd><b>Instant Teleport Menu</b> (All Places)</dd>
-          <dt><kbd>1</kbd><kbd>2</kbd><kbd>5</kbd><kbd>6</kbd></dt><dd>Direct station jumps</dd>
-          <dt><kbd>3</kbd></dt><dd>Hop onto metro platform deck</dd>
-          <dt><kbd>4</kbd></dt><dd>Aerial bird's-eye vantage view</dd>
+          <dt><kbd>E</kbd></dt><dd>Buy a ticket &middot; open the gate &middot; call the lift</dd>
+          <dt><kbd>E</kbd></dt><dd>Board when the doors open &middot; get off at a stop</dd>
+          <dt><kbd>3</kbd></dt><dd>Jump straight to the nearest platform</dd>
+          <dt><kbd>O</kbd></dt><dd>Travel menu: other districts are reached by train</dd>
         </dl>
       </div>
 
-      <div class="help-section">
-        <h3>Navigation</h3>
+      <div class="help-section" data-help="general">
+        <h3>Map, travel and game</h3>
         <dl class="help-keys">
-          <dt><kbd>M</kbd></dt><dd>Open / close full interactive map</dd>
-          <dt><kbd>Minimap</kbd></dt><dd>Click corner minimap to enlarge</dd>
-          <dt><kbd>RMB / 2x</kbd></dt><dd>Set GPS navigation waypoint</dd>
-          <dt><kbd>T</kbd></dt><dd>Cycle time of day (Morning &rarr; Night)</dd>
-          <dt><kbd>N</kbd></dt><dd>Mute / unmute audio</dd>
-          <dt><kbd>Esc</kbd></dt><dd>Release cursor / close open menu</dd>
+          <dt><kbd>M</kbd></dt><dd>Full map (or click the minimap)</dd>
+          <dt><kbd>RMB / 2x</kbd></dt><dd>On the map: drop a GPS waypoint</dd>
+          <dt><kbd>O</kbd></dt><dd>Travel menu: every station and landmark</dd>
+          <dt><kbd>1</kbd><kbd>2</kbd><kbd>5</kbd><kbd>6</kbd></dt><dd>Station jumps &middot; <kbd>4</kbd> aerial view</dd>
+          <dt><kbd>T</kbd></dt><dd>Time of day</dd>
+          <dt><kbd>G</kbd></dt><dd>Photo mode (<kbd>Enter</kbd> saves a PNG)</dd>
+          <dt><kbd>N</kbd></dt><dd>Mute</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Pause menu and settings</dd>
         </dl>
       </div>
     </div>
@@ -920,7 +930,7 @@
     </div>
 
     <div class="modal-footer">
-      <span class="footer-hint">Tip: Selecting places in other districts automatically takes you on the metro journey!</span>
+      <span class="footer-hint"><b>⚡</b> jumps you there instantly &middot; <b>🚇</b> reloads the other district and you arrive by train</span>
       <span class="footer-shortcut">Shortcut: <kbd>O</kbd></span>
     </div>
   </div>

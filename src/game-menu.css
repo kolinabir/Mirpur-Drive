@@ -1,0 +1,45 @@
+/* Pause menu, Settings and Photo mode. Matches hud.css / streetlife.css. */
+.game-menu { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: flex-start; padding: 24px 7vw; background: linear-gradient(90deg, #080b0bf2 0, #080b0bd0 34%, #080b0b55 70%, #080b0b22); font-family: Arial, Helvetica, sans-serif; }
+.game-menu.hidden, .game-menu-card.hidden, #photo-bar.hidden { display: none; }
+.game-menu-card { width: min(360px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; color: #fff; }
+.game-menu-eyebrow { color: #e9c85e; font: 700 10px Arial, sans-serif; letter-spacing: .16em; }
+.game-menu h2 { margin: 10px 0 22px; font: 900 clamp(48px, 7vw, 76px)/.9 Impact, 'Arial Narrow', Arial, sans-serif; text-transform: uppercase; color: #f7f6ee; text-shadow: 3px 3px 0 #050606; }
+html[data-lang="bn"] .game-menu h2 { font: 700 44px/1.2 'Noto Sans Bengali', sans-serif; text-shadow: none; }
+.game-menu-card > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 46px; margin-top: 3px; padding: 0 18px; border: 0; background: #141818df; color: #eeeee8; font: 700 13px Arial, sans-serif; letter-spacing: .05em; text-transform: uppercase; text-align: left; cursor: pointer; transition: background .12s, color .12s, transform .12s; }
+.game-menu-card > button.primary { background: #f3f1e8; color: #171a17; border-left: 5px solid #e9c85e; padding-left: 13px; }
+.game-menu-card > button:hover, .game-menu-card > button:focus-visible { background: #e9c85e; color: #111; transform: translateX(5px); outline: none; }
+.game-menu-card > button:hover kbd, .game-menu-card > button:focus-visible kbd, .game-menu-card > button.primary kbd { color: #111; border-color: #11111166; background: #1111110f; }
+.game-menu-gh { margin-top: 18px; font: 700 10px Arial, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #a7ada1; }
+.game-setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 14px; margin-top: 3px; padding: 12px 18px; background: #141818df; color: #d7dbd0; font-size: 12px; letter-spacing: .04em; }
+.game-setting input[type="range"] { grid-column: 1 / 2; width: 100%; accent-color: #e9c85e; }
+.game-setting output { color: #fff; font: 700 12px Arial, sans-serif; font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+.game-setting > span { grid-column: 1 / -1; color: #a7ada1; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.game-setting-check { grid-template-columns: 1fr auto; }
+.game-setting-check > span { grid-column: auto; }
+.game-setting input[type="checkbox"] { width: 20px; height: 20px; accent-color: #e9c85e; }
+.game-seg { grid-column: 1 / -1; display: flex; gap: 2px; }
+.game-seg button { flex: 1; min-height: 38px; border: 0; background: #ffffff0e; color: #c1c5bc; font: 700 12px Arial, 'Noto Sans Bengali', sans-serif; cursor: pointer; }
+.game-seg button.active { background: #f3f1e8; color: #141714; box-shadow: inset 0 -3px #e9c85e; }
+.game-menu-card[data-view="settings"] > button { margin-top: 14px; }
+
+/* Photo mode: nothing on screen but the world and a small bar. */
+body.photo-mode #hud, body.photo-mode #mobile-controls, body.photo-mode #sports-hud-wrap, body.photo-mode #gta-camera-toast, body.photo-mode #drift-banner, body.photo-mode #transit-status { visibility: hidden !important; }
+#photo-bar { position: fixed; z-index: 105; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 3px; opacity: .55; transition: opacity .15s; }
+#photo-bar:hover, #photo-bar:focus-within { opacity: 1; }
+#photo-bar button { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 14px; border: 0; background: #111714e6; color: #eee; font: 700 10px Arial, sans-serif; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+#photo-bar button:hover { background: #e9c85e; color: #111; }
+body.photo-flash::after { content: ''; position: fixed; inset: 0; z-index: 200; background: #fff; opacity: .6; pointer-events: none; }
+
+@media (max-height: 500px) {
+  .game-menu { align-items: flex-start; padding: 14px 5vw; }
+  .game-menu h2 { margin: 4px 0 10px; font-size: 40px; }
+  .game-menu-card > button { min-height: 40px; }
+  .game-menu-card[data-view="pause"] { display: grid; grid-template-columns: 1fr 1fr; gap: 0 3px; width: min(560px, 100%); }
+  .game-menu-card[data-view="pause"].hidden { display: none; }
+  .game-menu-card[data-view="pause"] > :is(.game-menu-eyebrow, h2, .game-menu-gh) { grid-column: 1 / -1; }
+  .game-setting { padding: 8px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-menu-card > button { transition: none; }
+  .game-menu-card > button:hover { transform: none; }
+}

@@ -4,7 +4,7 @@
 #hud #stats[data-level="ok"] { color: #e9c85e; }
 #hud #stats[data-level="bad"] { color: #f08a7a; }
 #hud #topbar { top: auto; bottom: 34px; left: auto; right: 30px; display: flex; align-items: flex-end; flex-direction: column; gap: 4px; border: 0; border-radius: 0; background: none; padding: 0; text-shadow: 0 2px 3px #000, 1px 0 #000; }
-#hud #topbar::before { content: 'DHAKA / FREE ROAM'; color: #e9c85e; font-size: 9px; letter-spacing: .18em; font-weight: 700; }
+#hud #topbar::before { content: attr(data-eyebrow); color: #e9c85e; font-size: 9px; letter-spacing: .18em; font-weight: 700; }
 #hud #topbar .title { font: italic 800 26px/1.1 Georgia, serif; color: #fff; }
 #hud #topbar .bn { display: none; }
 #hud #location { color: #d1d4ca; font-size: 11px; }
@@ -22,9 +22,14 @@
 #hud #minimap-street { left: 28px; right: auto; bottom: 26px; width: 190px; text-align: left; padding-left: 10px; border-left: 3px solid #e9c85e; }
 #hud #minimap-street .street-name { font-size: 10px; line-height: 1.6; font-weight: 800; letter-spacing: .07em; }
 #hud #minimap-street .district-name { font-size: 9px; color: #adb8a4; }
-#hud #gps-hud { left: 28px; bottom: 268px; right: auto; border: 0; border-left: 3px solid #e9c85e; border-radius: 0; background: #111714e6; max-width: 260px; }
+#hud #gps-hud { left: 226px; bottom: 72px; right: auto; border: 0; border-left: 3px solid #e9c85e; border-radius: 0; background: #111714e6; max-width: 260px; }
 #hud #interaction { bottom: 36px !important; border: 0 !important; border-radius: 0 !important; border-left: 3px solid #e9c85e !important; background: #101612ed !important; padding: 12px 20px !important; color: #fff; max-width: min(540px, 52vw); text-align: center; font-size: 12px !important; box-shadow: 0 4px 14px #0003; }
 #hud #interaction:empty { display: none; }
+#hud #interaction { font-size: 13px !important; font-weight: 700; letter-spacing: .02em; }
+#hud #interaction kbd { margin: 0 10px 0 0; padding: 3px 9px; font: 800 13px/1.4 Arial, sans-serif; color: #161c13; background: #e9c85e; border: 0; border-bottom: 3px solid #b89a3a; border-radius: 3px; }
+#hud #interaction.pop { animation: interaction-pop .18s ease-out; }
+@keyframes interaction-pop { from { opacity: 0; margin-bottom: -6px; } }
+@media (prefers-reduced-motion: reduce) { #hud #interaction.pop { animation: none; } }
 #hud.unlocked::after { top: auto; bottom: 92px; border: 0; border-radius: 0; background: #101612bb; font-size: 10px; color: #ccd2c5; padding: 8px 12px; }
 #transit-status { position: absolute; left: 28px; top: 26px; white-space: pre-line; line-height: 1.8; background: #0f1613e8; color: #d3dacf; border-top: 3px solid #e9c85e; padding: 14px 20px; font-size: 11px; min-width: 210px; }
 #transit-status::first-line { font-size: 17px; font-weight: 800; letter-spacing: .04em; color: #fff; }
@@ -80,3 +85,57 @@ body.touch-game #gta-camera-toast { top: auto !important; bottom: 200px; font-si
   body.touch-game #sports-hud-wrap { top: 70px !important; right: 120px !important; width: 86px !important; height: 86px !important; }
   body.touch-game #gta-camera-toast { bottom: 30px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Short screens (phone landscape, a squat desktop window). Everything above
+   was laid out for ~800 px of height; under 500 px the corners ran into each
+   other: journey card over the minimap, location title into the speedometer,
+   status strip under the pedals. Rules here are prefixed `html` so they win
+   over both hud.css and mobile-controls.css regardless of import order.
+   --------------------------------------------------------------------------- */
+@media (max-height: 500px) {
+  /* The big location title is the first thing to go; the minimap banner and
+     the Travel menu already say where you are. */
+  html body #hud #topbar { display: none; }
+  html body #hud #stats { top: auto; bottom: 4px; left: 50%; font-size: 9px; padding: 2px 8px; }
+}
+@media (max-height: 500px) and (pointer: fine) {
+  html body #hud #minimap:not(.expanded) { width: 120px; height: 120px; left: 18px; bottom: 44px; }
+  html body #hud #minimap-street { left: 18px; bottom: 8px; width: 170px; }
+  html body #hud .street-status { left: 18px; bottom: 172px; width: 126px; }
+  html body #hud .street-wallet-hint { display: none; }
+  html body #hud #gps-hud { left: 152px; bottom: 44px; }
+  html body #hud #bottombar { top: 10px; right: 18px; }
+  html body #hud #hud-top-actions { top: 46px; right: 18px; }
+  html body #hud #hud-top-actions button { min-height: 34px; }
+  html body #hud .first-journey { top: 10px; left: 18px; width: 230px; padding: 10px 34px 10px 12px; }
+  html body #hud .journey-copy { display: none; }
+  html body #sports-hud-wrap { right: 18px !important; bottom: 14px !important; width: 124px !important; height: 124px !important; }
+  html body #hud #interaction { bottom: 14px !important; }
+}
+@media (max-height: 500px) {
+  /* Touch: the status strip moves from under the pedals to the top centre,
+     trimmed to what a thumb can use. */
+  html body.touch-game #hud #bottombar { top: max(8px, env(safe-area-inset-top)); bottom: auto; left: 50%; right: auto; transform: translateX(-50%); padding: 0 10px; gap: 12px; min-height: 32px; }
+  html body.touch-game #hud #bottombar > span:first-child { display: none; }
+  html body.touch-game #hud #bottombar button { min-height: 32px; }
+  html body.touch-game #hud #minimap:not(.expanded) { top: 62px; }
+  html body.touch-game #hud .first-journey { top: max(8px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); width: 210px; }
+  html body.touch-game #hud .street-status { top: 74px; left: max(12px, env(safe-area-inset-left)); }
+  html body.touch-game #transit-status { top: 74px; }
+  html body.touch-game #hud:has(#transit-status:not(:empty)) .street-status { display: none; }
+  /* Speedometer sits beside the steering pad instead of behind the toast. */
+  html body.touch-game #sports-hud-wrap { top: auto !important; bottom: max(14px, env(safe-area-inset-bottom)) !important; left: 150px !important; right: auto !important; width: 96px !important; height: 96px !important; }
+}
+/* The camera / car toast is centred with a transform; two stylesheets each
+   forcing `top` and `bottom` stretched it into a screen-filling box on touch. */
+html body.touch-game #gta-camera-toast { top: max(48px, env(safe-area-inset-top)) !important; bottom: auto !important; transform: translateX(-50%) !important; max-width: 60vw; }
+
+/* Bangla mode (src/i18n.js): Bengali glyphs need a real Bengali face, a little
+   more size than the 9-10 px Latin caps, and no letter-spacing (it breaks
+   conjuncts apart). */
+html[data-lang="bn"] #hud, html[data-lang="bn"] .game-menu, html[data-lang="bn"] #photo-bar button { font-family: 'Noto Sans Bengali', Arial, sans-serif; }
+html[data-lang="bn"] #hud #bottombar, html[data-lang="bn"] #hud #hud-top-actions button { font-size: 12px; letter-spacing: 0; }
+html[data-lang="bn"] #hud #topbar::before, html[data-lang="bn"] #hud #location, html[data-lang="bn"] #hud #minimap-street .district-name { font-size: 12px; letter-spacing: 0; }
+html[data-lang="bn"] #hud #topbar .title { font: 700 24px/1.3 'Noto Sans Bengali', sans-serif; }
+html[data-lang="bn"] .game-menu-card > button, html[data-lang="bn"] .game-setting > span, html[data-lang="bn"] .game-menu-gh { font: 600 14px 'Noto Sans Bengali', sans-serif; letter-spacing: 0; }

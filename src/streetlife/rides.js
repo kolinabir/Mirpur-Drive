@@ -85,7 +85,7 @@ export function createRides({ scene3, player, camera, traffic, roadGraph, collis
       return `${ride.spec.label} to ${ride.dest.name} · ${left} m · ৳${ride.fare} — E: get down here${skip}`;
     }
     const near = candidate();
-    return near ? `E: hail ${VEHICLES[near.type].label.toLowerCase()}` : '';
+    return near ? `E: hail ${VEHICLES[near.type].label.toLowerCase()} · from ৳${roundFare(VEHICLES[near.type].base)}` : '';
   }
 
   function openMenu(near) {

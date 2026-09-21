@@ -18,6 +18,13 @@
 let ctx = null;
 let master = null;
 let analyser = null;
+const BASE_GAIN = 0.55;
+let muted = false;
+let volume = 1;
+
+function applyGain() {
+  if (master) master.gain.setTargetAtTime(muted ? 0 : BASE_GAIN * volume, ctx.currentTime, 0.05);
+}
 
 export function ensureAudioContext() {
   if (ctx) {
@@ -28,7 +35,7 @@ export function ensureAudioContext() {
   if (!Ctx) return null; // no WebAudio support; run silently
   ctx = new Ctx();
   master = ctx.createGain();
-  master.gain.value = 0.55;
+  master.gain.value = muted ? 0 : BASE_GAIN * volume;
   analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
   master.connect(analyser);
@@ -48,10 +55,15 @@ export function whiteNoiseBuffer(c, seconds) {
   return buf;
 }
 
-let muted = false;
 export function setMuted(v) {
   muted = v;
-  if (master) master.gain.value = v ? 0 : 0.55;
+  applyGain();
+  window.dispatchEvent(new CustomEvent('mirpur:mute', { detail: muted }));
+}
+/** @param {number} v 0..1, the player's Settings volume */
+export function setVolume(v) {
+  volume = Math.min(1, Math.max(0, v));
+  applyGain();
 }
 export function isMuted() {
   return muted;

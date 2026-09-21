@@ -19,13 +19,25 @@ function el(tag, className, text) {
  * @param {{ host: HTMLElement, onPanelClose?: () => void }} options
  */
 export function createStreetUi({ host, onPanelClose }) {
+  // Wallet and errand share one block pinned to the top of the minimap, so
+  // money and the current objective read together.
+  const status = el('div', 'street-status');
   const wallet = el('div', 'street-wallet');
   wallet.setAttribute('aria-label', 'Wallet');
+  const coin = el('span', 'street-coin', '৳');
+  coin.setAttribute('aria-hidden', 'true');
+  const amount = el('span', 'street-amount');
+  const journalHint = el('span', 'street-wallet-hint');
+  journalHint.append(el('kbd', '', 'J'));
+  wallet.append(coin, amount, journalHint);
   const errandLine = el('div', 'street-errand');
   errandLine.hidden = true;
+  status.append(wallet, errandLine);
   const toasts = el('div', 'street-toasts');
   toasts.setAttribute('role', 'status');
-  host.append(wallet, errandLine, toasts);
+  host.append(status, toasts);
+  /** @type {number | null} */
+  let lastTaka = null;
 
   const menu = el('div', 'street-panel hidden');
   menu.id = 'street-menu';
@@ -142,7 +154,15 @@ export function createStreetUi({ host, onPanelClose }) {
     },
     /** @param {number} taka */
     setWallet(taka) {
-      wallet.textContent = `৳ ${taka.toLocaleString('en-US')}`;
+      amount.textContent = taka.toLocaleString('en-US');
+      if (lastTaka !== null && taka !== lastTaka) {
+        const diff = taka - lastTaka;
+        const delta = el('span', `street-delta ${diff > 0 ? 'gain' : 'loss'}`, `${diff > 0 ? '+' : '−'}${Math.abs(diff)}`);
+        wallet.append(delta);
+        delta.addEventListener('animationend', () => delta.remove());
+        setTimeout(() => delta.remove(), 2000); // reduced-motion: no animationend
+      }
+      lastTaka = taka;
     },
     /** @param {string | null} text */
     setErrand(text) {
