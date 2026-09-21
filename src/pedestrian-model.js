@@ -8,6 +8,9 @@ class PedestrianGeometryError extends Error {
   }
 }
 
+/** Height of a figure's centre of mass above its feet at scale 1, in metres. */
+export const RAGDOLL_CENTRE = 0.85;
+
 function buildGeometry() {
   /** @type {THREE.BufferGeometry[]} */
   const parts = [];
@@ -161,10 +164,34 @@ export function createPedestrianModel(count) {
     mesh.setMatrixAt(index, dummy.matrix);
   }
 
+  /**
+   * Pose a run-over figure (traffic.js ragdolls): same instance slot, but
+   * tumbling about its own CENTRE (cx, cy, cz) instead of standing on its
+   * feet. `flail` > 0 swings the limbs while airborne; 0 leaves them limp.
+   * @param {number} index @param {number} cx @param {number} cy
+   * @param {number} cz @param {number} yaw @param {number} pitch
+   * @param {number} scale @param {number} flail phase advance this frame, rad */
+  function poseRagdoll(index, cx, cy, cz, yaw, pitch, scale, flail) {
+    phases[index] = (phases[index] + flail) % (Math.PI * 2);
+    gait.setXYZW(index, phases[index], 0, flail > 0 ? 0.46 : 0, performance.now() / 1000);
+    // The model's origin is at the feet; (0, h, 0) pitched about X then yawed
+    // about Y is where the centre sits relative to them.
+    const h = RAGDOLL_CENTRE * scale;
+    const sp = Math.sin(pitch) * h;
+    dummy.position.set(cx - sp * Math.sin(yaw), cy - Math.cos(pitch) * h, cz - sp * Math.cos(yaw));
+    dummy.rotation.set(pitch, yaw, 0, 'YXZ');
+    dummy.scale.set(scale * (0.93 + (index % 7) * 0.025), scale, scale);
+    dummy.updateMatrix();
+    dummy.rotation.order = 'XYZ';
+    mesh.setMatrixAt(index, dummy.matrix);
+    // The next pose() call is a respawn somewhere else: snap, don't turn.
+    initialized[index] = 0;
+  }
+
   function flush() {
     mesh.instanceMatrix.needsUpdate = true;
     gait.needsUpdate = true;
   }
 
-  return { mesh, pose, flush };
+  return { mesh, pose, poseRagdoll, flush };
 }

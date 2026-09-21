@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { centreAlignment } from './metro.js';
 
 /**
  * Small, readable street landmarks for the north district. OSM still owns
@@ -68,6 +69,9 @@ function nearestRoadPose(scene, x, z) {
         const width = Math.max(4, road.w || 6);
         best = {
           distance,
+          qx,
+          qz,
+          width,
           x: qx + nx * (width / 2 + 2.2),
           z: qz + nz * (width / 2 + 2.2),
           nx,
@@ -79,7 +83,72 @@ function nearestRoadPose(scene, x, z) {
       }
     }
   }
-  return best || { x, z, nx: 0, nz: 1, tx: 1, tz: 0, yaw: 0, distance: Infinity };
+  if (!best) return { x, z, nx: 0, nz: 1, tx: 1, tz: 0, yaw: 0, distance: Infinity };
+
+  // "Beside the nearest road" is not the same as "off the road": a dual
+  // carriageway is two OSM ways, and stepping off one of them toward the
+  // other put the Pallabi bus shelter in the median, on the tarmac under the viaduct
+  // (owner, 2026-09-21: "there's something in the middle of the road").
+  // March outward from the road, trying the POI's own side first at each
+  // distance, and take the first spot that is clear of EVERY road. (Here the
+  // far side of the bundle wins: the near side is a run of service roads.)
+  for (let extra = 0; extra <= 30; extra += 1) {
+    for (const flip of [1, -1]) {
+      const off = best.width / 2 + 2.2 + extra;
+      const cx = best.qx + best.nx * flip * off;
+      const cz = best.qz + best.nz * flip * off;
+      if (roadClearance(scene, cx, cz) < LANDMARK_CLEARANCE) continue;
+      best.x = cx;
+      best.z = cz;
+      best.nx *= flip;
+      best.nz *= flip;
+      return best;
+    }
+  }
+  return best;
+}
+
+/** Half the depth of the deepest street piece, m: the gap it needs from any kerb. */
+const LANDMARK_CLEARANCE = 1.8;
+
+/**
+ * Kerb-to-centreline half width of the road streets.js lays under the
+ * viaduct (its CORRIDOR: 3 m median / 2 + a 10.5 m carriageway). That road
+ * is generated from the METRO centreline and is far wider than the OSM
+ * ways it replaces, so it has to be tested on its own.
+ */
+const CORRIDOR_HALF = 12;
+let corridorCache = null;
+
+function corridorCentre(scene) {
+  if (!corridorCache || corridorCache.scene !== scene) {
+    const tracks = scene.metro?.tracks;
+    corridorCache = { scene, pts: tracks?.length ? centreAlignment(tracks) : [] };
+  }
+  return corridorCache.pts;
+}
+
+function polylineDistance(pts, x, z) {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pts[i - 1][0]; const az = pts[i - 1][1];
+    const dx = pts[i][0] - ax; const dz = pts[i][1] - az;
+    const len2 = dx * dx + dz * dz;
+    if (len2 < 1e-6) continue;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / len2));
+    best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t));
+  }
+  return best;
+}
+
+/** Distance from (x, z) to the nearest road's EDGE (negative = on the carriageway). */
+function roadClearance(scene, x, z) {
+  let clearance = polylineDistance(corridorCentre(scene), x, z) - CORRIDOR_HALF;
+  for (const road of scene.roads || []) {
+    if (road.rank < 1 || !road.pts || road.pts.length < 2) continue;
+    clearance = Math.min(clearance, polylineDistance(road.pts, x, z) - Math.max(4, road.w || 6) / 2);
+  }
+  return clearance;
 }
 
 function makeSign(en, bn, accent) {

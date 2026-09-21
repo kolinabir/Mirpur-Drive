@@ -328,6 +328,51 @@ export class Sky {
     return p.label;
   }
 
+  /**
+   * A look part-way between two presets, for the opening cinematic: it plays
+   * in morning light and eases into the player's own time of day during the
+   * last shot, so control never arrives with a lighting pop. `this.current`
+   * is left alone; call setTime() to land on a real preset afterwards.
+   * @param {string} fromKey @param {string} toKey @param {number} t 0..1
+   */
+  setBlend(fromKey, toKey, t) {
+    const a = TIMES_OF_DAY[fromKey];
+    const b = TIMES_OF_DAY[toKey];
+    if (!a || !b) return;
+    const num = (x, y) => x + (y - x) * t;
+    const hex = (x, y) => new THREE.Color(x).lerp(new THREE.Color(y), t).getHex();
+    const groundOf = (p) => p.ambientGround ?? (p.elevation < 0 ? 0x1a1614 : 0x7a7368);
+    const lookA = cloudLookFor(a);
+    const lookB = cloudLookFor(b);
+    const from = this.current;
+    const mixed = {
+      ...a,
+      elevation: num(a.elevation, b.elevation),
+      azimuth: num(a.azimuth, b.azimuth),
+      top: hex(a.top, b.top),
+      horizon: hex(a.horizon, b.horizon),
+      haze: hex(a.haze, b.haze),
+      sun: hex(a.sun, b.sun),
+      sunIntensity: num(a.sunIntensity, b.sunIntensity),
+      dirColor: hex(a.dirColor ?? a.sun, b.dirColor ?? b.sun),
+      dirIntensity: num(a.dirIntensity, b.dirIntensity),
+      ambient: hex(a.ambient, b.ambient),
+      ambientGround: hex(groundOf(a), groundOf(b)),
+      ambientIntensity: num(a.ambientIntensity, b.ambientIntensity),
+      fillColor: hex(a.fillColor ?? 0x9fb5c8, b.fillColor ?? 0x9fb5c8),
+      fillIntensity: num(a.fillIntensity ?? 0.4, b.fillIntensity ?? 0.4),
+      fog: hex(a.fog, b.fog),
+      fogNear: num(a.fogNear, b.fogNear),
+      fogFar: num(a.fogFar, b.fogFar),
+      exposure: num(a.exposure, b.exposure),
+      cloudColor: lookA.color.lerp(lookB.color, t).getHex(),
+      cloudOpacity: num(lookA.opacity, lookB.opacity),
+    };
+    TIMES_OF_DAY.__blend = mixed;
+    try { this.setTime('__blend'); } finally { delete TIMES_OF_DAY.__blend; }
+    this.current = from;
+  }
+
   /** Keep sky dome, sun direction, and dynamic altitude fog synced with the camera. */
   update(cameraPosition, elapsed = 0) {
     this.dome.position.copy(cameraPosition);

@@ -142,6 +142,7 @@ machine-fetched and fully regenerable. To rebuild them:
 | `1` / `2` / `5` / `6` | Jump to Pallabi / Mirpur 11 / Mirpur 10 / Uttara South |
 | `M` (or click the minimap) | Full map; right-click or double-click sets a GPS waypoint |
 | `T` | Cycle time of day |
+| `B` | Rain on / off (বৃষ্টি): a monsoon shower, and Mirpur 10 under water |
 | `N` | Mute / unmute sound |
 | `H` | Toggle the help panel |
 | `Esc` | Release the mouse / close the open menu |
@@ -186,7 +187,9 @@ guides for [map data](docs/contributing/MAP.md),
 [textures](docs/contributing/TEXTURES.md),
 [3D models](docs/contributing/MODELS.md),
 [landmarks, signage and reference photos](docs/contributing/LANDMARKS.md) and
-[code](docs/contributing/CODE.md).
+[code](docs/contributing/CODE.md). Anything that touches rendering has to
+follow the [performance guidelines](docs/PERFORMANCE.md), which are written for
+people and AI agents alike.
 
 ## Data & licensing
 

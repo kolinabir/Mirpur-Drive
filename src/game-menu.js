@@ -14,7 +14,7 @@ import './game-menu.css';
 import { tr, applyI18n, getLang, setLang } from './i18n.js';
 
 const STORAGE_KEY = 'mirpurSettings';
-const DEFAULTS = { volume: 100, sensitivity: 100, quality: 'auto', showStats: false };
+const DEFAULTS = { volume: 100, sensitivity: 100, quality: 'auto', antialias: 'auto', showStats: false, blood: true };
 
 function loadSettings() {
   try {
@@ -38,7 +38,6 @@ function loadSettings() {
  */
 export function createGameMenu({ canvas, debugMode, apply, onResume, openHelp, openTravel }) {
   const settings = loadSettings();
-  if (debugMode) settings.showStats = true;
 
   const save = () => {
     try {
@@ -51,7 +50,8 @@ export function createGameMenu({ canvas, debugMode, apply, onResume, openHelp, o
     apply.volume(settings.volume / 100);
     apply.sensitivity(settings.sensitivity / 100);
     apply.quality(settings.quality);
-    apply.stats(settings.showStats);
+    apply.blood?.(settings.blood);
+    apply.stats(debugMode || settings.showStats); // ?debug forces it on without saving that
   };
 
   const root = document.createElement('div');
@@ -80,9 +80,14 @@ export function createGameMenu({ canvas, debugMode, apply, onResume, openHelp, o
       <div class="game-setting"><span data-i18n>Graphics</span>
         <div class="game-seg" data-seg="quality"><button type="button" data-value="auto" data-i18n>Auto</button><button type="button" data-value="performance" data-i18n>Performance</button></div>
       </div>
+      <div class="game-setting"><span data-i18n>Anti-aliasing</span>
+        <div class="game-seg" data-seg="antialias"><button type="button" data-value="auto" data-i18n>Auto</button><button type="button" data-value="off" data-i18n>Off (faster)</button></div>
+        <small data-i18n>Off helps most on integrated graphics. Changing it reloads the game.</small>
+      </div>
       <div class="game-setting"><span data-i18n>Language</span>
         <div class="game-seg" data-seg="lang"><button type="button" data-value="en">English</button><button type="button" data-value="bn">বাংলা</button></div>
       </div>
+      <label class="game-setting game-setting-check"><span data-i18n>Blood</span><input type="checkbox" data-set="blood"></label>
       <label class="game-setting game-setting-check"><span data-i18n>Show FPS counter</span><input type="checkbox" data-set="showStats"></label>
       <button type="button" data-act="back" class="primary"><span data-i18n>Back</span><kbd>Esc</kbd></button>
     </div>`;
@@ -158,9 +163,12 @@ export function createGameMenu({ canvas, debugMode, apply, onResume, openHelp, o
       const seg = segBtn.parentElement.dataset.seg;
       if (seg === 'lang') setLang(segBtn.dataset.value);
       else {
+        const changed = settings[seg] !== segBtn.dataset.value;
         settings[seg] = segBtn.dataset.value;
         save();
         applyAll();
+        // Anti-aliasing is fixed when the WebGL context is created.
+        if (seg === 'antialias' && changed) location.reload();
       }
       syncControls();
       return;

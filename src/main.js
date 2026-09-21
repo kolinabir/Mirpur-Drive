@@ -8,7 +8,7 @@ import { createTransitHud } from './transit-hud.js';
 import * as THREE from 'three';
 import { loadFacadeTextures } from './facade-loader.js';
 import { createPerfGovernor } from './perf-governor.js';
-import { buildBuildings, buildCollisionGrid, updateBuildingLOD, ingestSceneColliders, resolveCollision } from './city.js';
+import { buildBuildings, buildCollisionGrid, updateBuildingLOD, setBuildingLodScale, ingestSceneColliders, resolveCollision } from './city.js';
 import { buildNeighbourhoodDetails } from './neighbourhood-details.js';
 import { buildWorldDetails } from './world-details.js';
 import { buildLandmarks, buildStreetFrontage } from './landmarks.js';
@@ -28,11 +28,16 @@ import { createWalkableRegistry } from './walkable.js';
 import { createInteriorSystem } from './interior.js';
 import { createStationLife } from './stationlife.js';
 import { createGameMenu } from './game-menu.js';
+import { createInstanceCuller } from './instance-cull.js';
 import { tr, num, localName, distanceFrom, applyI18n, getLang } from './i18n.js';
 import { DISTRICTS, resolveDistrict, travelTo, gatewayAt, gatewayJump, districtForCoord, findStationNear, ALL_DISTRICT_STATIONS, ALL_TELEPORT_PLACES } from './districts.js';
 import { buildSangsad, SANGSAD_IDS } from './sangsad.js';
 import { createSwitchCamera } from './switch-camera.js';
 import { createIntroCinematic } from './intro-cinematic.js';
+import { buildStreetClutter } from './street-clutter.js';
+import { createStreetMotion } from './street-motion.js';
+import { createMonsoon } from './monsoon.js';
+import { createPlatformBoards } from './platform-boards.js';
 import { createFirstJourney } from './first-journey.js';
 import { createMobileControls, isGameplayBlocked } from './mobile-controls.js';
 import { createStreetLife } from './streetlife/index.js';
@@ -60,6 +65,7 @@ const LOADING_TIPS = [
   'Press <b>V</b> to enter or exit drivable cars and cruise down Begum Rokeya Avenue.',
   'Press <b>M</b> or click the minimap to open the full interactive Dhaka map.',
   'Press <b>T</b> to cycle between morning, midday, golden sunset, and neon night.',
+  'Press <b>B</b> for বৃষ্টি: a monsoon shower, and Mirpur 10 under water.',
   'Press <b>E</b> to interact with ticket turnstiles and board MRT Line 6 trains.',
   'Press <b>H</b> at any time to open the full Controls &amp; Shortcuts guide.',
   'Visit Louis Kahn\'s architectural masterpiece, the National Parliament House (Jatiya Sangsad Bhaban).',
@@ -230,6 +236,9 @@ function makeBoundary(scene, district) {
   };
 }
 
+// A 0.3 m pole is a third of a pixel wide at this distance on a 1080p screen.
+const FURNITURE_RANGE = 500;
+
 async function main() {
   // -------------------------------------------------------------------------
   // Debug flag + district selection (docs/briefs/P1-PERF-BOUNDARY.md row
@@ -279,7 +288,15 @@ async function main() {
   //    by the governor, between PIXEL_RATIO_MIN and that cap.
   // `?aa=0|1` and `?res=fixed` override both for A/B testing.
   const dpr = window.devicePixelRatio || 1;
-  const wantAA = params.has('aa') ? params.get('aa') !== '0' : dpr < 1.5;
+  // Settings -> Anti-aliasing (src/game-menu.js) stores 'off' here. It is a
+  // context attribute, so it can only be read at start-up; the menu reloads.
+  let savedAA = 'auto';
+  try {
+    savedAA = JSON.parse(localStorage.getItem('mirpurSettings') || '{}').antialias || 'auto';
+  } catch {
+    // Storage blocked or corrupt: auto.
+  }
+  const wantAA = params.has('aa') ? params.get('aa') !== '0' : savedAA === 'off' ? false : dpr < 1.5;
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: wantAA,
@@ -292,7 +309,11 @@ async function main() {
     max: PIXEL_RATIO_MAX,
     min: PIXEL_RATIO_MIN,
     enabled: params.get('res') !== 'fixed',
+    // Stage two (far-detail distances); the systems it drives are built later.
+    onDetail: (scale) => applyDetailScale(scale),
   });
+  let applyDetailScale = () => {};
+  let setEffectsPerformanceMode = () => {}; // street-clutter / street-motion / monsoon tier, set once they exist
   renderer.shadowMap.enabled = false;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -568,6 +589,21 @@ async function main() {
   }
 
   const destructibles = createDestructibles(scene3, collision);
+
+  // Street lights and power poles: draw only those near the viewer. Registered
+  // here, after everything that reads their instance matrices at load time
+  // (collision ingest, night lamp discovery, destructibles) has run.
+  const furnitureGroup = scene3.getObjectByName('street-furniture');
+  const furnitureCuller = furnitureGroup
+    ? createInstanceCuller(furnitureGroup.children.filter((c) => c.isInstancedMesh), FURNITURE_RANGE)
+    : null;
+  if (furnitureGroup) furnitureGroup.userData.culler = furnitureCuller;
+  applyDetailScale = (scale) => {
+    furnitureCuller?.setRangeScale(scale);
+    metro.setDetailScale?.(scale);
+    traffic.setDetailScale?.(scale);
+    setBuildingLodScale(scale);
+  };
   const player = new Player(camera, canvas, collision, walkable, debugMode);
   player.boundary = boundary;
   const switchCamera = createSwitchCamera(player, camera, scene3, sky);
@@ -775,7 +811,7 @@ async function main() {
   camera.position.copy(player.position);
   camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   startSpot = { ...startSpot, y: player.position.y };
-  const introCinematic = createIntroCinematic({ player, camera, metro, sky, district, startSpot, world: scene3 });
+  const introCinematic = createIntroCinematic({ player, camera, metro, sky, traffic, district, startSpot, world: scene3 });
 
   const minimap = new Minimap(document.getElementById('minimap'), scene, metro.stations);
   const mapHintEl = document.getElementById('maphint');
@@ -866,6 +902,44 @@ async function main() {
     }
   }
   window.__mirpur.streetlife = streetlife; // debug hook: .world.stalls/.eateries/.places, .state.data, .rides
+
+  // Street dressing (posters, festoons, scaffolding, parked rickshaws, dogs),
+  // the small things that move (birds, exhaust, steam, tube lights), and the
+  // monsoon. B is for বৃষ্টি; ?weather=rain starts wet.
+  // Phones and small machines get half the rooftop/side-road dressing and the
+  // low effects tier from the first frame; everyone else drops to it only if
+  // the perf governor has run out of resolution to give back (detail < 1).
+  const lowEnd = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency ?? 8) <= 4 || (navigator.deviceMemory ?? 8) <= 4;
+  const streetClutter = buildStreetClutter(scene, { metro, collision, density: lowEnd ? 0.5 : 1 });
+  scene3.add(streetClutter.group);
+  const streetMotion = createStreetMotion({ traffic, sky, stalls: streetlife.world?.stalls ?? [], sites: streetClutter.sites.sand });
+  scene3.add(streetMotion.group);
+  const monsoon = createMonsoon({ scene: scene3, sky, metro, peds, clutter: streetClutter, motion: streetMotion });
+  if (params.get('weather') === 'rain') monsoon.set(true);
+  // Next-train countdowns over the platforms, computed from the metro's own timetable.
+  const platformBoards = createPlatformBoards(metro);
+  scene3.add(platformBoards.group);
+  Object.assign(window.__mirpur, { streetClutter, streetMotion, monsoon, platformBoards });
+  let governorDetail = 1;
+  let performanceMode = false; // Settings > Quality > Performance
+  const applyEffectsQuality = () => {
+    // minimal = still over budget with the governor's draw distances well in (or a phone that has started to struggle).
+    const tier = governorDetail <= (lowEnd ? 0.8 : 0.65) ? 'minimal' : lowEnd || performanceMode || governorDetail < 0.9 ? 'low' : 'high';
+    for (const system of [streetClutter, streetMotion, monsoon, platformBoards]) system.setQuality(tier);
+    window.__mirpur.effectsTier = tier;
+  };
+  setEffectsPerformanceMode = (on) => { performanceMode = on; applyEffectsQuality(); };
+  {
+    const previous = applyDetailScale;
+    applyDetailScale = (scale) => {
+      previous(scale);
+      streetClutter.setDetailScale(scale);
+      platformBoards.setDetailScale(scale);
+      governorDetail = scale;
+      applyEffectsQuality();
+    };
+  }
+  applyEffectsQuality();
   // E goes to the station systems whenever they are showing a prompt, and to
   // the street otherwise; a ride in progress always owns it.
   let stationPromptShown = false;
@@ -1418,7 +1492,7 @@ async function main() {
 
   const modeEl = document.getElementById('mode');
   const refreshModeLabel = () => {
-    modeEl.textContent = tr(stationlife.state.riding ? 'Metro' : window.__mirpur.drive?.driving ? 'Drive' : player.flying ? 'Fly' : 'Walk');
+    modeEl.textContent = tr(stationlife.state.riding ? 'Metro' : player.inRide ? 'Ride' : window.__mirpur.drive?.driving ? 'Drive' : player.flying ? 'Fly' : 'Walk');
   };
   let wasLocked = false;
   let pauseOpenedAt = 0;
@@ -1450,9 +1524,12 @@ async function main() {
   // Time of day cycling.
   const timeKeys = Object.keys(TIMES_OF_DAY);
   let timeIndex = timeKeys.indexOf('midday');
+  const refreshTimeLabel = () => {
+    timeLabel.textContent = tr(TIMES_OF_DAY[timeKeys[timeIndex]].label) + (monsoon.raining ? ` · ${tr('Rain')}` : '');
+  };
   const applyTime = () => {
-    const label = sky.setTime(timeKeys[timeIndex]);
-    timeLabel.textContent = tr(label);
+    sky.setTime(timeKeys[timeIndex]);
+    refreshTimeLabel();
   };
   applyTime();
 
@@ -1463,8 +1540,12 @@ async function main() {
     apply: {
       volume: setVolume,
       sensitivity: (v) => { player.lookScale = v; },
-      quality: (q) => perfGovernor.setMax(q === 'performance' ? Math.max(PIXEL_RATIO_MIN, PIXEL_RATIO_MAX * 0.67) : PIXEL_RATIO_MAX),
+      quality: (q) => {
+        perfGovernor.setMax(q === 'performance' ? Math.max(PIXEL_RATIO_MIN, PIXEL_RATIO_MAX * 0.67) : PIXEL_RATIO_MAX);
+        setEffectsPerformanceMode(q === 'performance');
+      },
       stats: (on) => { statsEl.hidden = !on; },
+      blood: (on) => peds.setBlood?.(on),
     },
     onResume: () => player.requestLock(),
     openHelp: openHelpModal,
@@ -1476,7 +1557,7 @@ async function main() {
   const refreshLanguage = () => {
     applyI18n();
     refreshModeLabel();
-    timeLabel.textContent = tr(TIMES_OF_DAY[timeKeys[timeIndex]].label);
+    refreshTimeLabel();
     if (topbarTitle) topbarTitle.textContent = tr('Mirpur corridor');
     document.getElementById('topbar')?.setAttribute('data-eyebrow', tr('DHAKA / FREE ROAM'));
     hud.dataset.unlockedHint = tr('Click to look around');
@@ -1522,6 +1603,11 @@ async function main() {
         // PMREM generated once at startup and never re-probed. Day/night
         // response is just an intensity tweak here, not a regeneration.
         setEnvironmentIntensity();
+        break;
+      case 'KeyB':
+        // বৃষ্টি: a monsoon shower on or off (src/monsoon.js).
+        monsoon.toggle();
+        refreshTimeLabel();
         break;
       case 'Digit1': {
         // Digit1 always targets quickTravel[0] (primaryStation) — Mirpur 10
@@ -1681,6 +1767,7 @@ async function main() {
   }
 
   let frameCount = 0;
+  let wasInRide = false;
 
   function frame() {
     requestAnimationFrame(frame);
@@ -1690,7 +1777,9 @@ async function main() {
     frameCount++;
     const evenFrame = (frameCount & 1) === 0;
 
-    metro.update(elapsed);
+    metro.update(elapsed, camera.position);
+    platformBoards.update(elapsed, camera.position); // same clock as the trains: that is what makes it exact
+    furnitureCuller?.update(camera.position);
     mobileControls.update();
     // Intro cinematic and GTA V switch-camera transitions take precedence over player movement
     if (introCinematic.active) {
@@ -1709,8 +1798,12 @@ async function main() {
     worldDetails.update(activePos.x, activePos.z);
     sky.update(activePos, elapsed);
     sky.updateClouds(activePos, elapsed);
+    streetClutter.update(activePos, elapsed);
+    streetMotion.update(dt, elapsed, camera.position, { height: renderer.domElement.height, fov: camera.fov });
+    monsoon.update(dt, elapsed, camera.position, stationlife.state.riding || introCinematic.status.onBoard);
     const stationlifeLine = stationlife.update(dt, player);
     traffic.update(dt, elapsed, camera.position);
+    peds.updateRagdolls?.(dt); // full rate: a body in flight judders at the crowd's 30 Hz
     night.update(player.position, dt);
 
     // Non-critical systems run at half rate (~30 Hz) to save CPU. They receive
@@ -1727,7 +1820,7 @@ async function main() {
       minimap.update(player.position, player.yaw, sky.isDark);
     }
     const audioPosition = introCinematic.active ? camera.position : player.position;
-    worldAudio.update(dt, { x: audioPosition.x, y: audioPosition.y, z: audioPosition.z, yaw: introCinematic.active ? camera.rotation.y : player.yaw, insideMetro: stationlife.state.riding || (introCinematic.active && introCinematic.status.shot === 1) }, stationlife.state.trains);
+    worldAudio.update(dt, { x: audioPosition.x, y: audioPosition.y, z: audioPosition.z, yaw: introCinematic.active ? camera.rotation.y : player.yaw, insideMetro: stationlife.state.riding || introCinematic.status.onBoard }, stationlife.state.trains);
     // Precedence: stationlife's line (boarding/riding/alighting) wins
     // whenever it has one — it's the more time-critical interaction (a
     // closing door or a departing train) — falling back to interior's
@@ -1738,10 +1831,15 @@ async function main() {
     const streetSuspended = hud.classList.contains('hidden') || introCinematic.active || switchCamera.active ||
       stationlife.state.riding || player.inLift || (window.__mirpur.drive?.driving ?? false);
     const streetLine = streetlife.update(dt, elapsed, streetSuspended);
+    // Hailing a ride / getting down raises no 'modechange', so watch for it here.
+    if (!!player.inRide !== wasInRide) {
+      wasInRide = !!player.inRide;
+      refreshModeLabel();
+    }
     setInteraction(streetlife.riding ? streetLine : stationlifeLine || interiorLine || streetLine);
     updateTransitHud();
     boundaryEl.classList.toggle('hidden', !player.leavingMirpur);
-    firstJourney.update(dt, window.__mirpur.drive?.driving ?? false, isGameplayBlocked() || player.feetY > 1 || stationlife.state.riding || player.inLift || introCinematic.active || switchCamera.active || minimap.expanded || !helpModal.classList.contains('hidden') || !teleportModal.classList.contains('hidden') || !gatewayEl.classList.contains('hidden'));
+    firstJourney.update(dt, window.__mirpur.drive?.driving ?? false, isGameplayBlocked() || player.inRide || player.feetY > 1 || stationlife.state.riding || player.inLift || introCinematic.active || switchCamera.active || minimap.expanded || !helpModal.classList.contains('hidden') || !teleportModal.classList.contains('hidden') || !gatewayEl.classList.contains('hidden'));
 
     // Defensive: a material/uniform mismatch elsewhere in the scene graph
     // (seen this pass from a concurrently-edited file) must not stop the
@@ -1777,7 +1875,7 @@ async function main() {
       const compactStats = window.innerWidth <= 760 || document.body.classList.contains('touch-game');
       if (!statsEl.hidden) statsEl.textContent = compactStats
         ? `${fps} FPS`
-        : `${fps} FPS  ·  worst ${Math.round(worstMs)} ms  ·  ${info.calls} draws  ·  ${(info.triangles / 1000).toFixed(0)}k tris  ·  ${perfGovernor.ratio.toFixed(2)}x`;
+        : `${fps} FPS  ·  worst ${Math.round(worstMs)} ms  ·  ${info.calls} draws  ·  ${(info.triangles / 1000).toFixed(0)}k tris  ·  ${perfGovernor.ratio.toFixed(2)}x${perfGovernor.detail < 1 ? `  ·  detail ${Math.round(perfGovernor.detail * 100)}%` : ''}`;
       statsEl.dataset.level = fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad';
       worstMs = 0;
       locationEl.textContent = lm.distance < 3000 ? distanceFrom(lm.distance, lm) : '';

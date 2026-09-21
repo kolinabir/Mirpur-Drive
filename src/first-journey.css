@@ -1,17 +1,31 @@
-.cinematic { position: fixed; inset: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; color: #f4f3e9; font-family: system-ui, sans-serif; }
-.cinematic::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #07141366, transparent 65%), linear-gradient(0deg, #071413cc, transparent 28%, transparent 78%, #07141388); }
-.cinematic-blackout { position: absolute; inset: 0; background: #07100f; opacity: 1; z-index: 4; }
-.cinematic-top { position: absolute; top: max(24px, env(safe-area-inset-top)); left: max(32px, env(safe-area-inset-left)); right: max(32px, env(safe-area-inset-right)); display: flex; align-items: center; justify-content: space-between; gap: 16px; z-index: 5; }
+/* Opening cinematic (src/intro-cinematic.js). --bar is the 2.39:1 letterbox, capped so a tall phone keeps its picture. */
+.cinematic { --bar: clamp(5vh, calc((100vh - 100vw / 2.39) / 2), 13vh); position: fixed; inset: 0; z-index: 1000; display: none; overflow: hidden; pointer-events: none; color: #f4f3e9; font-family: system-ui, sans-serif; }
+.cinematic::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, transparent 52%, #05100e99 100%), linear-gradient(0deg, #071413b3, transparent 34%); transition: opacity 1.2s; }
+.cinematic-blackout { position: absolute; inset: 0; background: #050b0a; opacity: 1; z-index: 4; }
+/* Plain alpha, not mix-blend-mode: a blend mode over the WebGL canvas makes the compositor read the whole frame back, every frame. */
+.cinematic-grain { position: absolute; inset: -80px; z-index: 3; opacity: .07; will-change: transform; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.4 -.2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"); animation: cinematic-grain .32s steps(4) infinite; transition: opacity 1.2s; }
+@keyframes cinematic-grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-37px, 22px); } 50% { transform: translate(29px, -41px); } 75% { transform: translate(-18px, -27px); } 100% { transform: translate(0, 0); } }
+.cinematic-bar { position: absolute; left: 0; right: 0; height: var(--bar); background: #020504; z-index: 5; transition: transform 1.2s cubic-bezier(.65, 0, .2, 1); }
+.cinematic-bar-top { top: 0; }
+.cinematic-bar-bottom { bottom: 0; }
+.cinematic.handoff .cinematic-bar-top { transform: translateY(-101%); }
+.cinematic.handoff .cinematic-bar-bottom { transform: translateY(101%); }
+.cinematic.handoff::before, .cinematic.handoff .cinematic-grain { opacity: 0; }
+.cinematic.handoff .cinematic-top, .cinematic.handoff .cinematic-caption { opacity: 0 !important; }
+.cinematic-top { position: absolute; top: 0; height: max(var(--bar), 60px); padding-top: env(safe-area-inset-top); box-sizing: border-box; left: max(32px, env(safe-area-inset-left)); right: max(32px, env(safe-area-inset-right)); display: flex; align-items: center; justify-content: space-between; gap: 16px; z-index: 6; transition: opacity .6s; }
 .cinematic-brand { font-size: 11px; font-weight: 750; letter-spacing: .3em; }
-.cinematic-skip { pointer-events: auto; min-height: 44px; padding: 0 20px; color: #fff; border: 1px solid #ffffff55; border-radius: 24px; background: #07141399; cursor: pointer; font: 600 12px system-ui; }
+.cinematic-skip { pointer-events: auto; min-height: 40px; padding: 0 20px; color: #fff; border: 1px solid #ffffff55; border-radius: 24px; background: #07141399; cursor: pointer; font: 600 12px system-ui; }
 .cinematic-skip:hover { background: #17443e; }
-.cinematic-title { position: absolute; left: 7%; top: 24%; max-width: 86%; opacity: 0; transition: opacity .45s, transform .6s; text-shadow: 0 2px 25px #0008; }
-.cinematic-title span { display: block; font-size: 10px; letter-spacing: .24em; color: #bce5dc; }
-.cinematic-title strong { display: block; font-size: clamp(42px, 7.4vw, 100px); line-height: .93; font-weight: 850; letter-spacing: -.045em; margin: 20px 0 25px; }
-.cinematic-caption { position: absolute; left: 7%; right: 7%; bottom: max(32px, env(safe-area-inset-bottom)); }
-.cinematic-label { font-size: clamp(12px, 1.3vw, 16px); letter-spacing: .15em; font-weight: 650; letter-spacing: -.02em; }
-.cinematic-detail { margin-top: 6px; font-size: 10px; line-height: 1.8; letter-spacing: .14em; color: #bbd8d0; }
-.cinematic-bengali { font-size: clamp(24px, 3vw, 40px) !important; letter-spacing: 0 !important; color: #f4e7c9 !important; }
+.cinematic-opening { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; opacity: 0; transition: opacity .5s; }
+.cinematic-opening span { font-size: 11px; letter-spacing: .34em; color: #9fc4ba; }
+.cinematic-title { position: absolute; left: 7%; top: calc(var(--bar) + 9vh); max-width: 86%; opacity: 0; z-index: 2; transition: opacity .5s, transform .9s cubic-bezier(.2, .7, .2, 1); text-shadow: 0 2px 30px #000a; }
+.cinematic-title strong { display: block; font-family: "Noto Sans Bengali", system-ui, sans-serif; font-size: clamp(46px, 8.6vw, 124px) !important; line-height: 1.12; font-weight: 700; }
+.cinematic-title em { display: block; margin: 10px 0 18px; font-style: normal; font-size: clamp(15px, 2vw, 26px); font-weight: 800; letter-spacing: .42em; }
+.cinematic-title span { display: block; font-size: 10px; letter-spacing: .3em; color: #bce5dc; }
+.cinematic-caption { position: absolute; left: 7%; right: 7%; bottom: calc(var(--bar) + max(22px, env(safe-area-inset-bottom))); z-index: 2; transition: opacity .6s; }
+.cinematic-label { font-size: clamp(12px, 1.3vw, 16px); font-weight: 700; letter-spacing: .2em; }
+.cinematic-detail { margin-top: 6px; font-size: 10px; line-height: 1.8; letter-spacing: .18em; color: #bbd8d0; }
+.cinematic-bengali { font-family: "Noto Sans Bengali", system-ui, sans-serif; font-size: clamp(22px, 2.6vw, 34px); letter-spacing: 0 !important; color: #f4e7c9 !important; }
 #start { justify-content: flex-start; padding: 100px 7vw 80px; background: linear-gradient(90deg, #081510f2 0%, #081510d9 32%, #08151055 75%, #08151033), linear-gradient(0deg, #081510bd, transparent 30%); backdrop-filter: none; }
 #start .card { width: min(530px, 100%); max-height: none; overflow: visible; margin: auto 0; padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
 .start-masthead, .start-footer { position: absolute; left: 7vw; right: 7vw; display: flex; justify-content: space-between; gap: 20px; font: 650 10px/1.5 system-ui; letter-spacing: .18em; color: #dce7de; }
@@ -65,7 +79,9 @@
 .journey-dismiss { position: absolute; right: 0; top: 0; width: 36px; height: 44px; border: 0; background: none; color: #b8ccc4; font-size: 21px; cursor: pointer; }
 @keyframes journey-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 600px) { .cinematic-top { left: 20px; right: 20px; } .first-journey { left: 16px; top: 76px; width: 250px; padding: 12px 32px 12px 14px; } }
-@media (prefers-reduced-motion: reduce) { .cinematic-title { transition: none; } #start #begin { transition: none; } #start #begin:hover { transform: none; } .first-journey { animation: none; } }
+/* Phones: no full-screen animated layer over the canvas at all. */
+@media (pointer: coarse) { .cinematic-grain { display: none; } }
+@media (prefers-reduced-motion: reduce) { .cinematic-title, .cinematic-bar { transition: none; } .cinematic-grain { animation: none; } #start #begin { transition: none; } #start #begin:hover { transform: none; } .first-journey { animation: none; } }
 
 .touch-mode-option { display: flex; align-items: center; gap: 9px; min-height: 44px; color: #c6d7cf; font-size: 12px; cursor: pointer; }
 .touch-mode-option input { width: 18px; height: 18px; accent-color: #9ae3c8; }

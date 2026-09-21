@@ -22,3 +22,6 @@ data/heights-*.json
 
 # Wrangler (Cloudflare) local state
 .wrangler/
+
+# Local secrets for Pages Functions (wrangler pages dev) — never commit.
+.dev.vars

@@ -164,12 +164,16 @@ export function createDestructibles(scene3, collision) {
   let prevPlayerPos = null;
 
   function hidePoleInstance(i) {
-    poleMesh.setMatrixAt(i, zeroScale.matrix);
-    armMesh.setMatrixAt(i, zeroScale.matrix);
-    headMesh.setMatrixAt(i, zeroScale.matrix);
-    poleMesh.instanceMatrix.needsUpdate = true;
-    armMesh.instanceMatrix.needsUpdate = true;
-    headMesh.instanceMatrix.needsUpdate = true;
+    // The furniture meshes are distance-culled (src/instance-cull.js): their
+    // live buffers are re-packed, so `i` is only meaningful to the culler.
+    const culler = furnitureGroup.userData.culler;
+    for (const mesh of [poleMesh, armMesh, headMesh]) {
+      if (culler) culler.setMatrixAt(mesh, i, zeroScale.matrix);
+      else {
+        mesh.setMatrixAt(i, zeroScale.matrix);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
   }
 
   function spawnFallen(x, z, rot, impactDirX, impactDirZ) {

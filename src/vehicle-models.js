@@ -199,7 +199,8 @@ function rickshaw() {
 // ---------------------------------------------------------------------------
 // CNG auto-rickshaw: green body, black canopy, grille doors
 // ---------------------------------------------------------------------------
-function cng() {
+/** @param {boolean} [cabin] the hailed ride's variant: see hireGeometry() */
+function cng(cabin = false) {
   const GREEN = 0x1f7a3d;
   const GREEN_DARK = 0x175c2e;
   const CANOPY = 0x18181a;
@@ -212,7 +213,9 @@ function cng() {
     profile([[-1.3, 1.55], [-1.26, 1.72], [0.56, 1.72], [0.82, 1.6], [0.8, 1.55]], 1.36, CANOPY, 0.03),
     box(1.3, 0.56, 0.06, 0, 1.27, -1.27, GREEN), // rear upper panel
     box(0.7, 0.26, 0.02, 0, 1.36, -1.305, GLASS), // rear window
-    strut(0.96, 1.0, 0.74, 1.57, 0, 1.14, 0.02, GLASS, 0.01), // windscreen
+    // The windscreen is an opaque dark panel: right from the street, a wall in
+    // front of a passenger. The ridden CNG goes without (open-fronted, as many are).
+    ...(cabin ? [] : [strut(0.96, 1.0, 0.74, 1.57, 0, 1.14, 0.02, GLASS, 0.01)]),
     strut(0.96, 1.0, 0.74, 1.57, 0.6, 0.06, 0.06, GREEN_DARK), // screen pillars
     strut(0.96, 1.0, 0.74, 1.57, -0.6, 0.06, 0.06, GREEN_DARK),
     box(0.05, 0.56, 0.05, 0.62, 1.27, -0.2, CANOPY), // B pillars
@@ -333,6 +336,103 @@ function bus() {
   }
 
   return { paint, detail, lamps: lampSet(0.4, 0.2, 0.9, 1.05, 5.29, -5.29), doubleSide: false };
+}
+
+/**
+ * The bus as its PASSENGER sees it (streetlife/rides.js). bus() above is a
+ * closed shell with dark panels stuck on for windows: right from the street,
+ * but from a seat inside the back-face-culled walls vanish and the "glass"
+ * hangs in the air as opaque black slabs in front of the camera. This variant
+ * has the same outline built from panels instead, with real open window bays
+ * (every Dhaka bus runs with them open), a floor, seats, grab rails, a
+ * dashboard and the driver. Only ever built when a bus is actually hailed.
+ */
+function busCabin() {
+  const STRIPE = 0xe8dfc8;
+  const SEAT = 0x2f4a6b;
+  const FLOOR = 0x3a3d40;
+  const paint = [
+    box(2.5, 0.08, 10.4, 0, 3.04, 0, 0xffffff), // roof
+    box(2.5, 1.5, 0.06, 0, 1.2, -5.22, 0xffffff), // rear wall, below its window
+    box(2.5, 0.4, 0.06, 0, 2.86, -5.22, 0xffffff),
+    box(0.25, 0.7, 0.06, 1.125, 2.3, -5.22, 0xffffff),
+    box(0.25, 0.7, 0.06, -1.125, 2.3, -5.22, 0xffffff),
+    box(2.5, 1.15, 0.06, 0, 1.03, 5.22, 0xffffff), // front, below the screen
+    box(2.5, 0.22, 0.06, 0, 2.95, 5.18, 0xffffff),
+    box(0.1, 1.25, 0.1, 1.2, 2.22, 5.15, 0xffffff), // A pillars
+    box(0.1, 1.25, 0.1, -1.2, 2.22, 5.15, 0xffffff),
+    box(1.5, 0.2, 2.4, 0, 3.14, -1.2, 0xc4c4c4), // roof vent housing
+  ];
+  for (const side of [1, -1]) {
+    paint.push(box(0.06, 1.36, 10.4, side * 1.22, 1.13, 0, 0xffffff)); // wall below the windows
+    paint.push(box(0.06, 0.43, 10.4, side * 1.22, 2.845, 0, 0xffffff)); // and above them
+    // Pillars between the eight window bays (same spacing as bus()).
+    for (let i = 0; i <= 8; i++) {
+      paint.push(box(0.06, 0.82, 0.14, side * 1.22, 2.22, -5.01 + i * 1.12, 0xffffff));
+    }
+  }
+
+  const detail = [
+    box(2.4, 0.06, 10.3, 0, 0.85, 0, FLOOR),
+    box(2.53, 0.34, 10.36, 0, 0.6, 0, 0x2a2c2e), // skirt (under the floor)
+    box(1.3, 0.36, 0.04, 0, 1.12, 5.26, DARK), // grille
+    box(2.54, 0.3, 0.14, 0, 0.58, 5.24, DARK), // bumpers
+    box(2.54, 0.3, 0.14, 0, 0.58, -5.24, DARK),
+    box(0.4, 0.2, 0.04, 0.9, 1.05, 5.26, LENS),
+    box(0.4, 0.2, 0.04, -0.9, 1.05, 5.26, LENS),
+    box(0.26, 0.4, 0.04, 1.0, 1.2, -5.26, LENS_RED),
+    box(0.26, 0.4, 0.04, -1.0, 1.2, -5.26, LENS_RED),
+    box(0.5, 0.13, 0.02, 0, 0.9, -5.27, PLATE),
+    box(0.08, 0.4, 0.06, 1.36, 2.3, 4.98, DARK), // mirrors
+    box(0.08, 0.4, 0.06, -1.36, 2.3, 4.98, DARK),
+    cyl(0.64, 2.53, 0, 0.5, 3.0, DARK, 'x', 10), // wheel arches (they hump the floor inside, too)
+    cyl(0.64, 2.53, 0, 0.5, -3.2, DARK, 'x', 10),
+    ...wheel(0.5, 0.3, 1.1, 0.5, 3.0),
+    ...wheel(0.5, 0.3, -1.1, 0.5, 3.0),
+    ...wheel(0.5, 0.3, 1.1, 0.5, -3.2),
+    ...wheel(0.5, 0.3, -1.1, 0.5, -3.2),
+    // Cab: dashboard, wheel, and the driver on the right (-X; front is +Z).
+    box(2.4, 0.4, 0.5, 0, 1.5, 4.85, DARK),
+    cyl(0.2, 0.03, -0.7, 1.85, 4.55, DARK, 'z', 10),
+    box(0.5, 0.12, 0.5, -0.7, 1.35, 4.15, SEAT),
+    box(0.5, 0.7, 0.08, -0.7, 1.7, 3.9, SEAT),
+    box(0.42, 0.55, 0.26, -0.7, 1.72, 4.12, 0x4a5560),
+    ball(0.12, -0.7, 2.13, 4.14, SKIN),
+    // Grab rails under the roof, either side of the aisle.
+    cyl(0.02, 8.4, 0.42, 2.82, -0.6, CHROME, 'z', 6),
+    cyl(0.02, 8.4, -0.42, 2.82, -0.6, CHROME, 'z', 6),
+  ];
+  for (const side of [1, -1]) {
+    // The livery stripes, as strips on the wall rather than slabs through the cabin.
+    detail.push(box(0.02, 0.16, 10.4, side * 1.255, 1.4, 0, STRIPE));
+    detail.push(box(0.02, 0.05, 10.4, side * 1.255, 1.27, 0, 0x8c1a16));
+    // Eight rows of double seats; the kerb-side (+X) front row is where the door is.
+    for (let row = 0; row < 8; row++) {
+      const z = -4.3 + row * 0.95;
+      detail.push(box(0.86, 0.1, 0.46, side * 0.74, 1.3, z, SEAT));
+      detail.push(box(0.86, 0.62, 0.08, side * 0.74, 1.64, z - 0.24, SEAT));
+    }
+  }
+
+  return { paint, detail };
+}
+
+const HIRE_BUILDERS = { bus: busCabin, cng: () => cng(true) };
+const hireCache = new Map();
+
+/**
+ * Geometry for a vehicle the player RIDES IN (streetlife/rides.js), where the
+ * street model does not work from the inside; null for types that are fine
+ * as they are. Built on first use, i.e. only once one is actually hailed.
+ * @returns {{ paint: THREE.BufferGeometry | null, detail: THREE.BufferGeometry } | null}
+ */
+export function hireGeometry(type) {
+  if (!HIRE_BUILDERS[type]) return null;
+  if (!hireCache.has(type)) {
+    const { paint, detail } = HIRE_BUILDERS[type]();
+    hireCache.set(type, { paint: paint ? mergeGeometries(paint) : null, detail: mergeGeometries(detail) });
+  }
+  return hireCache.get(type);
 }
 
 // ---------------------------------------------------------------------------

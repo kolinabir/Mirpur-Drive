@@ -27,14 +27,16 @@ const UP_MS = TARGET_MS * 1.015; // at or under budget (a healthy 60 Hz window a
 const WINDOW_MS = 750;
 const HITCH_MS = 120;
 const STEP = 0.05; // ratio quantum; smaller steps mean more buffer reallocations
+const DETAIL_MIN = 0.5; // draw distances never go below half
+const DETAIL_STEP = 0.125;
 const PROBE_MIN_S = 5;
 const PROBE_MAX_S = 60;
 
 /**
  * @param {import('three').WebGLRenderer} renderer
- * @param {{ max: number, min?: number, enabled?: boolean }} opts
+ * @param {{ max: number, min?: number, enabled?: boolean, onDetail?: (scale: number) => void }} opts
  */
-export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true }) {
+export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true, onDetail = null }) {
   min = Math.min(min, max);
   let ratio = max;
   let sumMs = 0;
@@ -44,6 +46,19 @@ export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true })
   let probeWaitS = PROBE_MIN_S;
   let probing = false; // the last change was an upward probe
   let last = 0;
+  // Second stage, for machines still over budget at the resolution floor
+  // (integrated graphics, old laptops): pull in the DISTANCES at which far
+  // detail is drawn — street furniture, train and vehicle LOD, building tiles.
+  // Nothing near the player changes. It is the last thing given up and the
+  // first thing restored, because unlike resolution it can pop.
+  let detail = 1;
+  function applyDetail(next) {
+    next = Math.min(1, Math.max(DETAIL_MIN, next));
+    if (next === detail) return false;
+    detail = next;
+    onDetail?.(detail);
+    return true;
+  }
 
   const quantise = (r) => Math.round(r / STEP) * STEP;
 
@@ -59,6 +74,9 @@ export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true })
   return {
     get ratio() {
       return ratio;
+    },
+    get detail() {
+      return detail;
     },
     /** Lower (or restore) the ceiling, e.g. the Settings "Performance" option. */
     setMax(next) {
@@ -83,7 +101,8 @@ export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true })
       windowMs = 0;
 
       if (avg > DOWN_MS) {
-        const changed = apply(ratio * Math.sqrt(TARGET_MS / avg) * 0.98);
+        let changed = apply(ratio * Math.sqrt(TARGET_MS / avg) * 0.98);
+        if (!changed && ratio <= min + STEP / 2) changed = applyDetail(detail - DETAIL_STEP);
         if (changed && probing) probeWaitS = Math.min(PROBE_MAX_S, probeWaitS * 2);
         probing = false;
         calmS = 0;
@@ -94,8 +113,8 @@ export function createPerfGovernor(renderer, { max, min = 0.7, enabled = true })
           probing = false;
           probeWaitS = PROBE_MIN_S;
         }
-        if (ratio < max && calmS >= probeWaitS) {
-          probing = apply(ratio + STEP * 2);
+        if (calmS >= probeWaitS && (detail < 1 || ratio < max)) {
+          probing = detail < 1 ? applyDetail(detail + DETAIL_STEP) : apply(ratio + STEP * 2);
           calmS = 0;
         }
       } else {

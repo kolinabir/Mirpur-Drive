@@ -196,6 +196,8 @@ const MAT = {
   tactile: new THREE.MeshStandardMaterial({ color: COL.tactile, roughness: 0.7 }),
   rail: new THREE.MeshStandardMaterial({ color: 0x3d3a36, roughness: 0.4, metalness: 0.6 }),
   trainBody: new THREE.MeshStandardMaterial({ color: COL.trainBody, roughness: 0.35, metalness: 0.28 }),
+  // Far-LOD car shell: the body's surface, colours from vertex attributes (buildTrain).
+  trainFar: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.35, metalness: 0.28 }),
   trainRib: new THREE.MeshStandardMaterial({ color: COL.trainRib, roughness: 0.32, metalness: 0.32 }),
   trainGreen: new THREE.MeshStandardMaterial({ color: COL.trainGreen, roughness: 0.35, metalness: 0.08 }),
   trainWhite: new THREE.MeshStandardMaterial({ color: COL.trainWhite, roughness: 0.28, metalness: 0.1 }),
@@ -2255,6 +2257,16 @@ function buildStation(name, bnName, x, z, heading, legCount, labelFactory, build
  * same box positions/sizes per car, just baked into shared buckets instead
  * of individual Mesh instances.
  */
+// Buckets that stay as their own always-visible meshes (emissive), and the
+// small ones a train 350 m away does not need at all.
+const TRAIN_ALWAYS_KEYS = new Set(['trainInterior', 'trainHeadlight', 'trainTaillight', 'trainDest']);
+const TRAIN_FAR_SKIP_KEYS = new Set(['trainWindowFrame', 'trainWheel', 'trainRib', 'trainPantograph', 'trainDoorEdge', 'wireOrange', 'trainRoofAC']);
+const TRAIN_LOD_RANGE = 350;
+// Station fittings that are under a pixel from this far: canopy ribs, platform
+// screen door frames, roundel rings, downlights, trusses, displays.
+const STATION_DETAIL_RANGE = 700;
+const STATION_DETAIL_PREFIXES = ['canopy-ribs', 'psdFrame', 'psd-leaves', 'roundel-rings', 'downlight', 'display', 'trussGrey', 'trussWhite', 'galvanised', 'steel'];
+
 function buildTrain() {
   const g = new THREE.Group();
   g.name = 'train';
@@ -2545,15 +2557,47 @@ function buildTrain() {
       bake('bogie', box(wallT, bH, GAP + 0.08), [bW / 2 - wallT / 2, 2.05, gZ]);
     }
 
+    // Level of detail. A car is ~14 meshes, and six trains of six cars were
+    // ~500 meshes submitted every frame, most of them kilometres away. Past
+    // TRAIN_LOD_RANGE the `detail` group is swapped for ONE merged mesh of the
+    // big painted surfaces (vertex-coloured, same steel material as the body,
+    // so the shell does not change shade at the swap). The lit parts — window
+    // band, head/tail lights, destination board — stay separate and always
+    // on, because their glow is what a distant train is at night.
+    const detail = new THREE.Group();
+    detail.name = `train-detail-${i}`;
+    const farParts = [];
     const doorMeshes = [];
     for (const [key, mat] of Object.entries(bucketMat)) {
       const m = mergeBucket(buckets[key], mat, `train-${key}-${i}`);
-      if (m) {
+      if (!m) continue;
+      if (TRAIN_ALWAYS_KEYS.has(key)) {
         car.add(m);
-        if (key.startsWith('trainDoor')) doorMeshes.push(m);
+        continue;
       }
+      detail.add(m);
+      if (key.startsWith('trainDoor')) doorMeshes.push(m);
+      if (TRAIN_FAR_SKIP_KEYS.has(key)) continue;
+      const g = m.geometry.clone();
+      const colors = new Float32Array(g.attributes.position.count * 3);
+      for (let v = 0; v < colors.length; v += 3) {
+        colors[v] = mat.color.r;
+        colors[v + 1] = mat.color.g;
+        colors[v + 2] = mat.color.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      farParts.push(g);
     }
+    car.add(detail);
+    const far = farParts.length ? new THREE.Mesh(mergeGeometries(farParts, false), MAT.trainFar) : null;
+    if (far) {
+      far.name = `train-far-${i}`;
+      far.visible = false;
+      car.add(far);
+    }
+    farParts.forEach((g) => g.dispose());
     car.userData.doorMeshes = doorMeshes;
+    car.userData.lod = { detail, far };
 
     cars.push(car);
     g.add(car);
@@ -3020,12 +3064,52 @@ export function buildMetro(scene, labelFactory) {
         dir: tl.dir,
         stopDistances: tl.stopDistances,
         offset: (k * cycle) / TRAINS_PER_LINE,
+        lineIndex: trainLines.indexOf(tl),
       });
     }
   }
 
-  function update(elapsed) {
+  // Distance-driven detail (see TRAIN_LOD_RANGE / STATION_DETAIL_RANGE).
+  const stationDetail = [];
+  group.traverse((obj) => {
+    if (!obj.name || !obj.name.startsWith('station:')) return;
+    const parts = obj.children.filter((c) => STATION_DETAIL_PREFIXES.some((prefix) => c.name.startsWith(`${prefix}:`)));
+    if (parts.length) stationDetail.push({ x: obj.position.x, z: obj.position.z, parts, shown: true });
+  });
+  const _trainPos = new THREE.Vector3();
+  let detailScale = 1; // 0.5..1, from the perf governor's detail stage
+  function updateDetail(viewPos) {
+    const STATION_RANGE = STATION_DETAIL_RANGE * detailScale;
+    const TRAIN_RANGE = TRAIN_LOD_RANGE * detailScale;
+    for (const st of stationDetail) {
+      const d = Math.hypot(st.x - viewPos.x, st.z - viewPos.z);
+      // 10% hysteresis so standing on the boundary cannot flicker.
+      const show = st.shown ? d < STATION_RANGE * 1.1 : d < STATION_RANGE;
+      if (show === st.shown) continue;
+      st.shown = show;
+      for (const part of st.parts) part.visible = show;
+    }
+    for (const tr of trains) {
+      const cars = tr.obj.userData.cars;
+      if (!cars) continue;
+      tr.obj.getWorldPosition(_trainPos);
+      const d = Math.hypot(_trainPos.x - viewPos.x, _trainPos.z - viewPos.z);
+      const near = tr.lodNear === false ? d < TRAIN_RANGE : d < TRAIN_RANGE * 1.1;
+      if (near === tr.lodNear) continue;
+      tr.lodNear = near;
+      for (const car of cars) {
+        const lod = car.userData.lod;
+        if (!lod || !lod.far) continue;
+        lod.detail.visible = near;
+        lod.far.visible = !near;
+      }
+    }
+  }
+
+  /** @param {number} elapsed @param {{x: number, z: number} | null} [viewPos] camera, for level of detail */
+  function update(elapsed, viewPos = null) {
     latestElapsed = elapsed;
+    if (viewPos) updateDetail(viewPos);
     for (const tr of trains) {
       const totalLen = tr.cum[tr.cum.length - 1];
       const cycle = calcCycleDuration(tr.stopDistances, totalLen);
@@ -3168,6 +3252,66 @@ export function buildMetro(scene, labelFactory) {
     }
   }
 
+  // --- Timetable (src/platform-boards.js) ------------------------------------
+  // update() above is a PURE function of `elapsed`: a train's place in its
+  // cycle is (elapsed + offset) % cycle, walked through the same run times and
+  // dwells every lap, and nothing anywhere holds a train or edits an offset.
+  // So an arrival is not predicted, it is computed: `arriveAt` is the phase at
+  // which update() first puts the train at rest at each stop, built with the
+  // identical arithmetic (run = L / SPEED, + EASE_BONUS over 60 m, then DWELL).
+  // If update()'s timing ever changes, change this with it.
+  const timetable = trainLines.map((tl, lineIndex) => {
+    const totalLen = tl.cum[tl.cum.length - 1];
+    const ordered = tl.stopDistances
+      .map((sd, stationIndex) => ({ sd, stationIndex }))
+      .sort((a, b) => (tl.dir > 0 ? a.sd - b.sd : b.sd - a.sd));
+    const arriveAt = new Array(stationList.length).fill(null);
+    const side = new Array(stationList.length).fill(0);
+    let phase = 0;
+    let dist = tl.dir > 0 ? 0 : totalLen;
+    for (const { sd, stationIndex } of ordered) {
+      const L = Math.abs(sd - dist);
+      phase += L / SPEED + (L > 60 ? EASE_BONUS : 0);
+      arriveAt[stationIndex] = phase;
+      phase += DWELL;
+      dist = sd;
+      // Which platform this rail runs past, in the station's own frame (+x or -x).
+      const st = stationList[stationIndex];
+      const at = sampleAt(tl.line, tl.cum, sd, true);
+      side[stationIndex] = Math.sign((at.x - st.x) * Math.cos(st.heading) - (at.z - st.z) * Math.sin(st.heading)) || 1;
+    }
+    // North is -z on every district map: that is the Uttara North end of Line 6.
+    const from = sampleAt(tl.line, tl.cum, tl.dir > 0 ? 0 : totalLen, true);
+    const to = sampleAt(tl.line, tl.cum, tl.dir > 0 ? totalLen : 0, true);
+    return { lineIndex, dir: tl.dir, cycle: calcCycleDuration(tl.stopDistances, totalLen), arriveAt, side, northbound: to.z < from.z, offsets: [] };
+  });
+  for (const tr of trains) timetable[tr.lineIndex].offsets.push(tr.offset);
+
+  /**
+   * Seconds until each of the next `count` arrivals on one rail at one station,
+   * soonest first. A train standing at the platform right now is `eta: 0` with
+   * `departsIn` seconds of dwell left. Exact (see above), allocation is the
+   * result array only.
+   * @param {number} stationIndex index into `stations` @param {number} lineIndex 0 or 1
+   * @returns {{ eta: number, departsIn: number }[]}
+   */
+  function arrivals(stationIndex, lineIndex, elapsed, count = 4) {
+    const line = timetable[lineIndex];
+    const at = line?.arriveAt[stationIndex];
+    if (at == null) return [];
+    const out = [];
+    for (const offset of line.offsets) {
+      const phase = (elapsed + offset) % line.cycle;
+      const since = ((phase - at) % line.cycle + line.cycle) % line.cycle; // s since this train last stopped here
+      if (since < DWELL) out.push({ eta: 0, departsIn: DWELL - since });
+      // Its next stop here, and the one after: four rows can need more than one lap of a three-train rail.
+      for (let lap = 1; lap <= 2; lap++) out.push({ eta: line.cycle * lap - since, departsIn: 0 });
+    }
+    out.sort((a, b) => a.eta - b.eta);
+    out.length = Math.min(out.length, count);
+    return out;
+  }
+
   function setCinematicTrain(options = null) {
     cinematicTrain = options ? { ...options, startTime: null } : null;
     // The opening has one readable hero subject. Hide the rest of the fleet
@@ -3207,6 +3351,7 @@ export function buildMetro(scene, labelFactory) {
   return {
     group,
     update,
+    setDetailScale(scale) { detailScale = scale; },
     stations: stationList,
     stationOrder, // P11-K bug 1: station NAMES sorted ascending by distance-along-track (NOT scene-file order) — the one true "next stop" sequence, see the comment above
     setPlatformDoors,
@@ -3214,6 +3359,9 @@ export function buildMetro(scene, labelFactory) {
     trains, // read-only view: [{obj, line, cum, dir, offset}, ...] per the P11-I contract
     setCinematicTrain,
     centre,
+    piers: pierPts, // [{x, z, ux, uz}] shaft centres and track direction, for street-clutter.js's posters
+    timetable, // per rail: cycle, arrival phase and platform side per station, which end it runs to
+    arrivals,
     stats: {
       piers: pierPts.length,
       trackLength: Math.round(total),

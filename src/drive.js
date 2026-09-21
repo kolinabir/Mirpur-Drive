@@ -2010,6 +2010,43 @@ function initDrive(mirpur) {
       showCameraToast(`CAMERA: ${GTA_CAMERA_MODES[cameraViewMode].name}`);
     },
     toggleDrive,
+    /**
+     * Car pose + world velocity for traffic.js's hit test. Fills `out` in
+     * place (no per-frame allocation) and returns false when not driving.
+     */
+    getMotion(out) {
+      if (!driving || !car) return false;
+      const sy = Math.sin(car.yaw), cy = Math.cos(car.yaw);
+      out.x = car.x;
+      out.z = car.z;
+      out.fx = -sy;
+      out.fz = -cy;
+      // forward = (-sy, -cy), right = (cy, -sy) — see forwardOf/rightOf.
+      out.vx = -sy * car.speed + cy * car.lateralVel;
+      out.vz = -cy * car.speed - sy * car.lateralVel;
+      out.halfL = HALF_L;
+      out.halfW = HALF_W;
+      return true;
+    },
+    /**
+     * The car ran something over (traffic.js). Speed is changed HERE, inside
+     * drive.js's own state, rather than written from outside — the two rAF
+     * loops are unordered (see destructibles.js's header).
+     * @param {number} keep fraction of speed kept, 0..1
+     * @param {number} severity 0..1, camera shake + thunk loudness
+     * @param {number} [yawKick] rad/s added to the crash yaw impulse
+     */
+    impact(keep, severity, yawKick = 0) {
+      if (!driving || !car) return;
+      car.speed *= keep;
+      car.lateralVel *= keep;
+      car.crashYawRate = THREE.MathUtils.clamp(
+        (car.crashYawRate || 0) + yawKick, -CRASH_YAW_RATE_MAX, CRASH_YAW_RATE_MAX);
+      shakeImpulse = Math.max(shakeImpulse, 0.45 * severity);
+      if (severity > 0.03) playThunk(severity);
+    },
+    /** One puff from the shared smoke pool (wrecked traffic). */
+    smoke(x, y, z) { smokePool.spawn(x, y, z, 0, 0); },
   };
   const clearInput = () => { keys.clear(); playHorn(false); };
   window.addEventListener('blur', clearInput);

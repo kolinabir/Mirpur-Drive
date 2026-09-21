@@ -15,22 +15,31 @@ import { resolveCollision, CARRIAGEWAY_HALF } from '../city.js';
 const HAIL_RANGE = 16;
 const EYE_HEIGHT = 1.68;
 const CORRIDOR_CAPTURE = 16; // m from the viaduct centreline: OSM draws this dual carriageway up to ~12 m out
+const FOLLOW_GAP = 2; // m, bumper to bumper, kept behind whatever is ahead
+const OWN_HALF_LEN = { rickshaw: 1.3, cng: 1.4, bus: 5 }; // m, as traffic.js's HALF_LEN
 const CORRIDOR_LANE = 9; // m left of the centreline: where traffic.js's corridor lanes actually run (6.75 + lane offset)
 
 const VEHICLES = {
   rickshaw: {
     label: 'Rickshaw', speed: 4.6, accel: 2.2, lane: 1.5, maxDist: 1800, base: 20, perKm: 30,
-    seat: [0, 1.5, -0.42], tooFar: 'Too far for a rickshaw — try a CNG',
+    seat: [0.36, 1.54, -0.62], tooFar: 'Too far for a rickshaw — try a CNG',
   },
   cng: {
     label: 'CNG', speed: 11, accel: 3.5, lane: 1.9, maxDist: Infinity, base: 40, perKm: 28,
-    seat: [0, 1.28, -0.45], tooFar: '',
+    seat: [0.38, 1.2, -0.62], tooFar: '',
   },
   bus: {
     label: 'Bus', speed: 9, accel: 1.6, lane: 2.4, maxDist: Infinity, base: 10, perKm: 5,
-    seat: [0.55, 2.3, 1.2], tooFar: '', stationsOnly: true,
+    seat: [0.4, 2.15, 2.5], tooFar: '', stationsOnly: true,
   },
 };
+
+// Seats are [left, up, forward] from the vehicle's origin, in metres, and are
+// tied to the shapes in vehicle-models.js: the rickshaw and CNG passenger
+// sits to the kerb side of the bench so the puller's / driver's back is
+// beside the view rather than filling it (dead centre, 0.5 m behind the CNG
+// driver, was a screen of shirt), and the bus seat is the front kerb-side
+// row of vehicle-models.js#busCabin, looking out through the windscreen.
 
 const roundFare = (taka) => Math.max(5, Math.round(taka / 5) * 5);
 const fareFor = (spec, metres) => roundFare(spec.base + (spec.perKm * metres) / 1000);
@@ -140,7 +149,7 @@ export function createRides({ scene3, player, camera, traffic, roadGraph, collis
 
     const first = route.sample(0);
     ride = {
-      spec, dest, route, fare, vehicle,
+      spec, dest, route, fare, vehicle, halfLen: OWN_HALF_LEN[near.type] || 1.5,
       s: 0, speed: 0, ux: first.ux, uz: first.uz,
       heading: Math.atan2(first.ux, first.uz),
       blockedFor: 0, ghostFor: 0, lane: spec.lane, laneTarget: spec.lane, laneTimer: 0,
@@ -156,19 +165,39 @@ export function createRides({ scene3, player, camera, traffic, roadGraph, collis
     place(0);
   }
 
-  /** Any other vehicle close ahead in our lane? Returns true to hold back. */
-  function blockedAhead(x, z, ux, uz) {
+  /**
+   * What is close ahead in our lane: another vehicle going our way, a wreck,
+   * or a person on the road. Returns the nearest one's gap (m, from our
+   * centre to its near end) and speed along our heading, or null when the lane is clear.
+   * Oncoming vehicles are ignored — on a narrow street they pass within a
+   * lane's width, and braking for each one made the ride lurch.
+   */
+  function blockerAhead(x, z, ux, uz) {
+    let best = null;
     for (const sys of traffic.systems) {
       for (const a of sys.agents) {
         if (a.hidden || a._wx === undefined) continue;
         const dx = a._wx - x;
         const dz = a._wz - z;
-        const ahead = dx * ux + dz * uz;
-        if (ahead < 1.5 || ahead > 8) continue;
-        if (Math.abs(dx * uz - dz * ux) < 1.6) return true;
+        const centre = dx * ux + dz * uz;
+        if (centre < 1.5) continue;
+        const ahead = centre - (sys.halfLen || 1.5);
+        if (ahead > 12 || (best && ahead > best.gap)) continue;
+        if (Math.abs(dx * uz - dz * ux) > 1.6) continue;
+        const dot = a.wreck || a._hx === undefined ? 0 : a._hx * ux + a._hz * uz;
+        if (dot < -0.3) continue;
+        best = { gap: ahead, lead: a.wreck ? 0 : Math.max(0, dot) * a.speed * (a.brakeMul ?? 1) };
       }
     }
-    return false;
+    for (const p of traffic.roadPeople?.() || []) {
+      const dx = p._wx - x;
+      const dz = p._wz - z;
+      const ahead = dx * ux + dz * uz;
+      if (ahead < 1 || ahead > 12 || (best && ahead > best.gap)) continue;
+      if (Math.abs(dx * uz - dz * ux) > 1.8) continue;
+      best = { gap: ahead, lead: 0 };
+    }
+    return best;
   }
 
   function place(dt) {
@@ -300,15 +329,25 @@ export function createRides({ scene3, player, camera, traffic, roadGraph, collis
     // Brake for the stop, and hold behind slower traffic rather than drive through it.
     let target = Math.min(ride.spec.speed, Math.sqrt(2 * ride.spec.accel * Math.max(0, remaining)) + 0.4);
     if (ride.ghostFor > 0) ride.ghostFor -= dt;
-    else if (blockedAhead(ride.vehicle.position.x, ride.vehicle.position.z, Math.sin(ride.heading), Math.cos(ride.heading))) {
-      target = Math.min(target, 0.6);
-      ride.blockedFor += dt;
-      // Jams deadlock; after a few seconds squeeze past, as any Dhaka driver would.
-      if (ride.blockedFor > 3.5) {
-        ride.ghostFor = 5;
-        ride.blockedFor = 0;
+    else {
+      const blocker = blockerAhead(ride.vehicle.position.x, ride.vehicle.position.z, Math.sin(ride.heading), Math.cos(ride.heading));
+      if (blocker) {
+        // Follow it: close up to a few metres, then match its speed. (This
+        // used to drop to a 0.6 m/s crawl behind ANYTHING, even a vehicle
+        // pulling away, which is what made a ride stop-start.)
+        const room = Math.max(0, blocker.gap - ride.halfLen - FOLLOW_GAP);
+        target = Math.min(target, blocker.lead * 0.9 + room * 0.8);
       }
-    } else ride.blockedFor = 0;
+      // Properly stuck (a wreck, a jam that is not moving): after a while
+      // squeeze past, as any Dhaka driver would.
+      if (blocker && ride.speed < 0.8) {
+        ride.blockedFor += dt;
+        if (ride.blockedFor > 5) {
+          ride.ghostFor = 5;
+          ride.blockedFor = 0;
+        }
+      } else ride.blockedFor = 0;
+    }
 
     const dv = target - ride.speed;
     ride.speed += Math.sign(dv) * Math.min(Math.abs(dv), ride.spec.accel * (dv < 0 ? 2.2 : 1) * dt);

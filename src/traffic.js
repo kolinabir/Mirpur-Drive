@@ -11,9 +11,11 @@
  */
 
 import * as THREE from 'three';
+import { resolveCollision } from './city.js';
 import { METRO, centreAlignment } from './metro.js';
-import { createPedestrianModel } from './pedestrian-model.js';
-import { vehicleGeometry } from './vehicle-models.js';
+import { createPedestrianModel, RAGDOLL_CENTRE } from './pedestrian-model.js';
+import { vehicleGeometry, hireGeometry } from './vehicle-models.js';
+import { createHitFx } from './hit-fx.js';
 
 // Counts were tuned for the old two-station map (436 roads). The north
 // corridor has 1,369 drivable routes over 4.2 km, so the same fleet spread
@@ -78,21 +80,28 @@ const BIKE_COLORS = [0xb3201f, 0x1b1d22, 0x1f4f9c, 0xd8d8d4, 0xd07a12, 0x2d6b3f]
 //    car/player back — it reads the player's position off window.__mirpur
 //    (the shared debug hook, this repo's own cross-file technique)
 //    defensively and no-ops if that hook isn't there yet.
-//  - Agent vs the agent ahead of it on the SAME route + direction + vehicle
-//    TYPE (car-following/braking): each system groups its own agents by
-//    (route, direction) once at build time; every frame each such (small —
-//    never all 343 at once) group is order-corrected with an insertion sort
-//    (cheap since the order rarely changes frame to frame) and brakes if the
-//    gap ahead is under SAFE_GAP, which is what makes traffic QUEUE
-//    nose-to-tail instead of overtaking through each other.
+//  - Agent vs whatever is ahead of it in its lane (lookAhead(), which
+//    superseded this pass's original per-route, per-type car-following): it
+//    brakes once the gap is under SAFE_GAP, which is what makes traffic QUEUE
+//    nose-to-tail instead of driving through each other.
 // ---------------------------------------------------------------------------
 
 const PLAYER_WALK_RADIUS = 0.5; // a hair over player.js's PLAYER_RADIUS (0.42)
+const PLAYER_RIDE_RADIUS = 1.3; // a passenger in a hailed rickshaw / CNG / bus
 const PLAYER_CAR_RADIUS = 2.6; // drive.js's HALF_L 2.25 / HALF_W 0.9 (private, not exported) + margin
 const PLAYER_CULL_R2 = 16 * 16; // metres^2: ignore agents further than this from the player
 const AVOID_DECAY = 0.9; // per frame; higher = snaps back to its lane faster once clear
 const AVOID_MAX = 2.5; // metres: clamp so a fast car can't fling an agent off the map
-const SAFE_GAP = 5.5; // metres of route-arclength kept clear of the vehicle ahead
+const SAFE_GAP = 5.5; // metres, bumper to bumper, below which a follower starts matching the leader
+
+// Look-ahead braking (owner, 2026-09-21: "traffic and vehicles become more
+// smart, like not going into each other"). See lookAhead().
+const LOOK_AHEAD = 5; // m: centre of the 3x3 hash-cell scan in front of each vehicle
+const SAME_WAY_DOT = -0.3; // heading dot below this = oncoming; that is the lanes' job, not the brakes'
+const PATIENCE = 6; // s held near-stationary before a vehicle creeps through regardless
+const CREEP_TIME = 3; // s of ignoring the brakes once patience runs out
+/** Half body length per type, m (the collision radius only covers the width). */
+const HALF_LEN = { bike: 1.0, rickshaw: 1.3, cng: 1.4, car: 2.2, bus: 5.0 };
 
 /**
  * Player world position + an effective collision radius, read defensively
@@ -110,81 +119,40 @@ function getPlayerProxy() {
   // Elevated check: player is on station platform (y=15.48) or concourse (y=8).
   // When elevated, player position is still valid for recycling and separation,
   // but ground-level vehicle push collision is skipped.
-  const elevated = p.y > 4.5;
-  const driving = !elevated && p.y < 1.45;
+  // A hailed ride (streetlife/rides.js) seats the eye up to 2.5 m up in a
+  // bus: that is still on the road, not elevated.
+  const riding = !!hook.player.inRide;
+  const elevated = !riding && p.y > 4.5;
+  // Driving is read off drive.js itself. It used to be guessed from eye
+  // height (< 1.45 m), which also matched the CNG passenger seat (1.44 m) and
+  // gave a CNG passenger the car's 2.6 m shove radius.
+  const driving = !elevated && !riding && !!(hook.drive && hook.drive.driving);
   const yaw = hook.player.yaw || 0;
+
+  // World velocity, from the position itself so it covers walking, driving
+  // and riding alike. This function is called several times a frame; only
+  // re-sample once real time has passed. A teleport is not a velocity.
+  const now = performance.now();
+  const dtMs = now - playerTrack.at;
+  if (dtMs > 8) {
+    const vx = ((p.x - playerTrack.x) / dtMs) * 1000;
+    const vz = ((p.z - playerTrack.z) / dtMs) * 1000;
+    const sane = dtMs < 500 && vx * vx + vz * vz < 45 * 45;
+    playerTrack.vx = sane ? vx : 0;
+    playerTrack.vz = sane ? vz : 0;
+    playerTrack.x = p.x;
+    playerTrack.z = p.z;
+    playerTrack.at = now;
+  }
   return {
-    x: p.x, z: p.z, driving, elevated,
-    radius: driving ? PLAYER_CAR_RADIUS : PLAYER_WALK_RADIUS,
+    x: p.x, z: p.z, driving, riding, elevated,
+    vx: playerTrack.vx, vz: playerTrack.vz,
+    radius: driving ? PLAYER_CAR_RADIUS : riding ? PLAYER_RIDE_RADIUS : PLAYER_WALK_RADIUS,
     fx: -Math.sin(yaw), fz: -Math.cos(yaw),
   };
 }
 
-/**
- * Group agent indices of ONE system by (route identity, direction) so the
- * car-following pass below never has to look outside an agent's own small
- * group. Built once at buildTraffic()/buildPedestrians() time — agents never
- * change route or direction after spawning.
- */
-function groupByRouteAndDirection(agents) {
-  const map = new Map();
-  agents.forEach((a, i) => {
-    let g = map.get(a.route);
-    if (!g) map.set(a.route, (g = { pos: [], neg: [] }));
-    (a.dir > 0 ? g.pos : g.neg).push(i);
-  });
-  return map;
-}
-
-/**
- * Insertion-sort `idx` (indices into `agents`) by each agent's normalised
- * arclength position on its route, ascending, then set `brakeMul` on every
- * agent so it slows down if the gap to the agent ahead (wrapping around the
- * route's length) is under SAFE_GAP. O(k) amortised for the nearly-sorted
- * case, which is every frame in practice since relative order changes
- * slowly — never a full re-sort of all agents on the map at once, since
- * `idx` only ever holds one (route, direction, type) group.
- */
-function applyCarFollowing(agents, idx, len, ascendingIsAhead) {
-  const n = idx.length;
-  if (n === 0) return;
-  if (n === 1) {
-    agents[idx[0]].brakeMul = 1;
-    return;
-  }
-  for (const i of idx) {
-    const a = agents[i];
-    a._dn = ((a.d % len) + len) % len;
-  }
-  // Insertion sort on normalised position — cheap when nearly sorted.
-  for (let i = 1; i < n; i++) {
-    const v = idx[i];
-    const vd = agents[v]._dn;
-    let j = i - 1;
-    while (j >= 0 && agents[idx[j]]._dn > vd) {
-      idx[j + 1] = idx[j];
-      j--;
-    }
-    idx[j + 1] = v;
-  }
-  // `idx` is now sorted ascending by _dn. For a `pos` group (dir=+1, moving
-  // toward increasing d) the vehicle ahead has the NEXT larger _dn; for a
-  // `neg` group (dir=-1, moving toward decreasing d) the vehicle ahead has
-  // the PREVIOUS smaller _dn. Both wrap around the route's length.
-  for (let i = 0; i < n; i++) {
-    const me = agents[idx[i]];
-    let ahead;
-    let gap;
-    if (ascendingIsAhead) {
-      ahead = agents[idx[(i + 1) % n]];
-      gap = (ahead._dn - me._dn + len) % len;
-    } else {
-      ahead = agents[idx[(i - 1 + n) % n]];
-      gap = (me._dn - ahead._dn + len) % len;
-    }
-    me.brakeMul = gap >= SAFE_GAP ? 1 : Math.max(0.04, gap / SAFE_GAP);
-  }
-}
+const playerTrack = { x: 0, z: 0, vx: 0, vz: 0, at: 0 };
 
 /**
  * Player-vs-agent overlap: push the agent sideways off its lane (an
@@ -192,11 +160,10 @@ function applyCarFollowing(agents, idx, len, ascendingIsAhead) {
  * forward progress. Mutates `a` in place. Returns true if the agent is
  * currently being pushed (used only for the doc's measured count).
  *
- * Sets `a.playerBrake`, NOT `a.brakeMul` — `a.brakeMul` is fully
- * recomputed from scratch by applyCarFollowing() every frame (see its "n
- * === 1 -> brakeMul = 1" branch and the unconditional assignment in its
- * main loop), so anything this function wrote there would be overwritten
- * before ever being read. `a.playerBrake` is this function's own field,
+ * Sets `a.playerBrake`, NOT `a.brakeMul` — `a.brakeMul` belongs to
+ * lookAhead() and is eased toward its target every frame, so anything this
+ * function wrote there would be pulled straight back out. `a.playerBrake`
+ * is this function's own field,
  * multiplied in alongside `a.brakeMul` at the one call site that steps
  * `a.d`, so a player hit still actually slows the agent down.
  */
@@ -222,6 +189,152 @@ function applyPlayerAvoidance(a, worldX, worldZ, agentRadius, playerProxy) {
   // "transfer some speed": the impact eats into forward progress instead of
   // continuing to interpenetrate.
   a.playerBrake = 0.15;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Run-over physics (owner, 2026-09-21: "kill pedestrians by driving on them,
+// also destroy vehicles ... must be optimized"). No physics engine: every
+// agent stays a kinematic rail-rider, and only the handful that were actually
+// HIT get a few lines of ballistic/friction integration until they respawn.
+//  - The hit test is the player's car as an oriented box (pose + velocity
+//    from drive.js's `mirpur.drive.getMotion`) against the agent's circle, in
+//    the car's own frame: two dot products per agent, and only for agents
+//    already inside applyPlayerAvoidance's PLAYER_CULL_R2.
+//  - A hit pedestrian becomes a ragdoll in its OWN instance slot; a vehicle
+//    loses hp (its tint darkens) and at 0 becomes a wreck that slides, spins,
+//    tips over if it is light, smokes, then respawns out of sight.
+//  - Both are hard-capped (MAX_RAGDOLLS / MAX_WRECKS, oldest evicted first),
+//    so the extra per-frame work is bounded no matter how long a rampage is.
+// Below HIT_MIN_SPEED nothing here fires and the P7-COLLISION push-aside
+// above is all that happens, exactly as before.
+// ---------------------------------------------------------------------------
+const HIT_MIN_SPEED = 4; // m/s (~14 km/h); slower than this just nudges
+const PLAYER_MASS = 1.6; // relative units, against VEHICLE_MASS below
+const VEHICLE_MASS = { bike: 0.5, rickshaw: 0.6, cng: 0.9, car: 1.3, bus: 4 };
+/** Roll a wreck settles at, rad: two- and three-wheelers end up on their side. */
+const WRECK_ROLL = { bike: 1.45, rickshaw: 1.25, cng: 1.1, car: 0.07, bus: 0.04 };
+const DAMAGE_PER_MS = 8; // hp (of 100) per m/s of closing speed, divided by mass
+const HIT_COOLDOWN = 0.4; // s before the same vehicle can be damaged again
+const MAX_RAGDOLLS = 12;
+const MAX_WRECKS = 6;
+const RAGDOLL_LIFETIME = 12; // s
+const WRECK_LIFETIME = 25; // s
+const GONE_DIST_SQ = 150 * 150; // further than this from the player: respawn early
+const SINK_TIME = 1.2; // s at the end of a lifetime spent sinking into the road
+const GRAVITY = 16; // m/s^2, heavier than real so a launch reads as snappy
+const IMPACT_SOUND_GAP = 80; // ms between thunks, so a crowd is not 15 sounds at once
+
+// ---------------------------------------------------------------------------
+// Street sense (owner, 2026-09-21: "make pedestrians smart, now they dumb").
+// The vehicle fleet and the crowd are built by two separate functions that
+// never saw each other: people stepped into the road on a timer without
+// looking, and vehicles drove through anyone on it. `shared` is the one
+// place each side publishes what the other needs:
+//  - systems       the vehicle systems, so a pedestrian at the kerb can look
+//                  for a gap before crossing (roadIsClear);
+//  - pedObstacles  everyone currently ON the carriageway near the player
+//                  (crossing, knocked down, or up and angry), so lookAhead()
+//                  brakes for them like it does for a vehicle.
+// ---------------------------------------------------------------------------
+const shared = { systems: null, pedObstacles: [], player: null };
+const CROSS_LOOK = 4.5; // s of oncoming traffic a pedestrian wants clear (the crossing takes 3.5)
+const CROSS_MAX_WAIT = 9; // s at the kerb before giving up and walking on
+const SMART_RADIUS_SQ = 230 * 230; // beyond this nobody is watching: cross as before, skip the checks
+const DODGE_MIN_SPEED = 3; // m/s: slower than this the car is no threat
+const DODGE_SPEED = 4; // m/s sideways, a panicked jump
+const DODGE_SIGHT = 24; // m: nobody reacts to a car further off than this
+const BACK_TURNED_DELAY = 0.45; // s extra before someone facing away notices
+const FREEZE_CHANCE = 0.15; // of people in the car's path who just stand there
+
+const carMotion = {
+  active: false, present: false, speed: 0, hitLx: 0,
+  x: 0, z: 0, fx: 0, fz: 1, vx: 0, vz: 0, halfL: 2.3, halfW: 0.94,
+};
+let lastImpactSoundAt = 0;
+
+/** Refresh `carMotion` from drive.js. Inactive on foot, in the air, or slow. */
+function readCarMotion(playerProxy) {
+  carMotion.active = false;
+  carMotion.present = false;
+  carMotion.speed = 0;
+  carMotion.vx = 0;
+  carMotion.vz = 0;
+  if (!playerProxy || playerProxy.elevated) return;
+  const drive = window.__mirpur && window.__mirpur.drive;
+  if (!drive || !drive.getMotion || !drive.getMotion(carMotion)) return;
+  carMotion.present = true;
+  carMotion.speed = Math.hypot(carMotion.vx, carMotion.vz);
+  carMotion.active = carMotion.speed >= HIT_MIN_SPEED;
+}
+
+/**
+ * Is the circle (wx, wz, r) inside the moving car's box, and is the car
+ * travelling TOWARD it? Leaves the agent's lateral offset in the car's frame
+ * in `carMotion.hitLx` (its sign decides which way things spin).
+ */
+function carHits(wx, wz, r) {
+  const dx = wx - carMotion.x;
+  const dz = wz - carMotion.z;
+  if (dx * carMotion.vx + dz * carMotion.vz <= 0) return false;
+  const lz = dx * carMotion.fx + dz * carMotion.fz;
+  if (Math.abs(lz) > carMotion.halfL + r) return false;
+  const lx = dz * carMotion.fx - dx * carMotion.fz;
+  if (Math.abs(lx) > carMotion.halfW + r) return false;
+  carMotion.hitLx = lx;
+  return true;
+}
+
+/** Tell drive.js the car hit something; the thunk is rate-limited, the speed loss is not. */
+function reportImpact(keep, severity, yawKick) {
+  const drive = window.__mirpur && window.__mirpur.drive;
+  if (!drive || !drive.impact) return;
+  const now = performance.now();
+  const audible = now - lastImpactSoundAt > IMPACT_SOUND_GAP;
+  if (audible) lastImpactSoundAt = now;
+  drive.impact(keep, audible ? severity : 0, yawKick);
+}
+
+/** Slide a knocked-about body along walls instead of through them. */
+function slideOnWorld(x, z, radius) {
+  const collision = window.__mirpur && window.__mirpur.collision;
+  return collision ? resolveCollision(collision, x, z, radius) : null;
+}
+
+/**
+ * Would anything reach the crossing at road-centre point (cx, cz), `halfSpan`
+ * metres kerb to centre, within CROSS_LOOK seconds? Looks at every vehicle
+ * (and the player's car) the way a person does: is it coming TOWARD my
+ * crossing line, and how soon. A stopped queue right on the line blocks too.
+ */
+function roadIsClear(cx, cz, halfSpan) {
+  for (const sys of shared.systems || []) {
+    for (const v of sys.agents) {
+      if (v._wx === undefined || v._hx === undefined || v.hidden) continue;
+      const dx = cx - v._wx;
+      const dz = cz - v._wz;
+      if (dx * dx + dz * dz > 70 * 70) continue;
+      const ahead = dx * v._hx + dz * v._hz;
+      const speed = v.wreck ? 0 : v.speed * v.brakeMul;
+      if (ahead < -3 || ahead > speed * CROSS_LOOK + 6) continue;
+      if (Math.abs(dx * v._hz - dz * v._hx) > halfSpan + 1.5) continue;
+      return false;
+    }
+  }
+  // The player's own vehicle, driven or ridden (a hailed ride is not in
+  // `shared.systems`: its agent is hidden and rides.js moves a stand-in).
+  const pm = shared.player;
+  if (pm && (pm.driving || pm.riding)) {
+    const dx = cx - pm.x;
+    const dz = cz - pm.z;
+    const speed = Math.hypot(pm.vx, pm.vz);
+    if (speed < 0.5) return dx * dx + dz * dz > 6 * 6;
+    const ix = pm.vx / speed;
+    const iz = pm.vz / speed;
+    const ahead = dx * ix + dz * iz;
+    if (ahead > -3 && ahead < speed * CROSS_LOOK + 6
+      && Math.abs(dx * iz - dz * ix) <= halfSpan + 1.5) return false;
+  }
   return true;
 }
 
@@ -280,7 +393,15 @@ export function buildHireVehicle(type, colorIndex = 0) {
   const vehicle = new THREE.Group();
   vehicle.name = `hire:${type}`;
   const tint = proto.colors[colorIndex % proto.colors.length];
-  for (const p of proto.parts()) {
+  // A hailed vehicle is seen from INSIDE, which some street models cannot be
+  // (see vehicle-models.js#hireGeometry).
+  let parts = proto.parts();
+  const cabin = hireGeometry(type);
+  if (cabin) {
+    parts = [{ key: 'detail', geometry: cabin.detail, colored: false }];
+    if (cabin.paint) parts.unshift({ key: 'paint', geometry: cabin.paint, colored: true });
+  }
+  for (const p of parts) {
     if (p.night) continue;
     const Material = p.basic ? THREE.MeshBasicMaterial : THREE.MeshLambertMaterial;
     const mesh = new THREE.Mesh(p.geometry, new Material({
@@ -302,9 +423,9 @@ export function buildHireVehicle(type, colorIndex = 0) {
  * Cross-route separation (owner, 2026-09-07: "vehicles are bumping into each
  * other, going through each other").
  *
- * applyCarFollowing only ever compares agents inside ONE (route, direction)
- * group, which is why two vehicles on different routes, in opposing lanes,
- * or converging at a junction could interpenetrate freely. This pass hashes
+ * Braking (lookAhead) only handles what is AHEAD in a vehicle's own lane;
+ * two vehicles side by side, in opposing lanes, or converging at a junction
+ * can still overlap. This pass hashes
  * every agent's CURRENT world position into a coarse grid and pushes apart
  * any overlapping pair, regardless of which route each is on.
  *
@@ -316,18 +437,20 @@ export function buildHireVehicle(type, colorIndex = 0) {
 const SEPARATE_CELL = 6;      // m, hash cell (a little larger than a bus)
 const SEPARATE_ACTIVE_R = 220; // m from the player; beyond this, skip entirely
 
-function separateAgents(allSystems, player) {
+function separateAgents(allSystems, player, follow = false) {
   if (!player) return { hits: 0, near: 0 };
   const grid = new Map();
   const live = [];
   for (const sys of allSystems) {
     const rad = sys.agentRadius || 1.2;
+    const halfLen = sys.halfLen || rad;
     for (const a of sys.agents) {
+      if (a.hidden) continue; // out on a hailed ride (rides.js draws it): a ghost shoves nobody
       const px = a._wx;
       const pz = a._wz;
-      if (px === undefined) continue;
+      if (px === undefined || a.dead) continue; // a body on the road shoves nobody
       if (Math.hypot(px - player.x, pz - player.z) > SEPARATE_ACTIVE_R) continue;
-      const rec = { a, x: px, z: pz, r: rad };
+      const rec = { a, x: px, z: pz, r: rad, hl: halfLen };
       live.push(rec);
       const k = Math.floor(px / SEPARATE_CELL) * 100000 + Math.floor(pz / SEPARATE_CELL);
       let arr = grid.get(k);
@@ -364,13 +487,153 @@ function separateAgents(allSystems, player) {
           // separating, so more piled in behind them — a positive feedback
           // loop that produced a heap of vehicles and pedestrians on top of
           // each other (owner screenshot, 2026-09-07). Longitudinal queuing
-          // is applyCarFollowing's job; this pass only pushes sideways.
+          // is lookAhead()'s job, which brakes only for what is AHEAD and
+          // has its own deadlock guards; this pass only pushes sideways.
           hits++;
         }
       }
     }
+    if (follow) lookAhead(rec, grid, player);
   }
   return { hits, near: live.length };
+}
+
+/**
+ * Brake `rec` for whatever is in its own lane ahead: ANY vehicle type, on ANY
+ * route, plus wrecks and the player. This replaces the old car-following,
+ * which sorted agents by arclength inside (route, direction, TYPE) groups
+ * built once at startup — so a car never saw the rickshaw in front of it, and
+ * once recycleAgents had moved agents onto new routes the groups described
+ * streets their members had long since left.
+ *
+ * Works on real world positions and headings instead, off the hash grid
+ * separateAgents() has already built, so it costs one extra 3x3 cell scan
+ * per vehicle near the player and nothing for the rest of the fleet.
+ *
+ * Writes `a.brakeTarget`; update() eases `a.brakeMul` toward it. A follower
+ * closes up to SAFE_GAP and then MATCHES the leader's speed rather than
+ * stopping dead, so queues flow.
+ *
+ * Deadlocks (the reason separateAgents itself never brakes) are closed off
+ * three ways: oncoming vehicles are ignored, two vehicles that each see the
+ * other ahead (a crossing) resolve by id so exactly one yields, and anything
+ * held near-stationary for PATIENCE seconds creeps through regardless.
+ */
+function lookAhead(rec, grid, player) {
+  const a = rec.a;
+  if (a.wreck) return;
+  const hx = a._hx;
+  const hz = a._hz;
+  if (hx === undefined) return;
+  let target = 1;
+  const cx = Math.floor((rec.x + hx * LOOK_AHEAD) / SEPARATE_CELL);
+  const cz = Math.floor((rec.z + hz * LOOK_AHEAD) / SEPARATE_CELL);
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const arr = grid.get((cx + i) * 100000 + (cz + j));
+      if (!arr) continue;
+      for (const other of arr) {
+        if (other === rec) continue;
+        const b = other.a;
+        const dx = other.x - rec.x;
+        const dz = other.z - rec.z;
+        const fwd = dx * hx + dz * hz;
+        if (fwd < 0.5) continue; // beside or behind
+        if (Math.abs(dx * hz - dz * hx) > rec.r + other.r - 0.7) continue; // not in my lane
+        const still = b.wreck || b._hx === undefined;
+        const dot = still ? 0 : hx * b._hx + hz * b._hz;
+        if (!still && dot < SAME_WAY_DOT) continue; // oncoming
+        if (!still && b._id < a._id) {
+          // Do they see ME ahead in THEIR lane too? Then the lower id goes first.
+          const bf = -(dx * b._hx + dz * b._hz);
+          if (bf > 0.5 && Math.abs(dx * b._hz - dz * b._hx) <= rec.r + other.r - 0.7) continue;
+        }
+        const lead = still ? 0 : Math.max(0, dot) * b.speed * b.brakeMul;
+        target = Math.min(target, followSpeed(fwd - rec.hl - other.hl, lead, a.speed));
+      }
+    }
+  }
+  // People on the carriageway (shared.pedObstacles): a wider lane than for a
+  // vehicle, because someone crossing is about to be where they are not yet.
+  for (const p of shared.pedObstacles) {
+    const dx = p._wx - rec.x;
+    const dz = p._wz - rec.z;
+    const fwd = dx * hx + dz * hz;
+    if (fwd < 0.5 || fwd > 16 || Math.abs(dx * hz - dz * hx) > rec.r + 1.5) continue;
+    target = Math.min(target, followSpeed(fwd - rec.hl - 1.2, 0, a.speed));
+  }
+  if (!player.elevated) {
+    const dx = player.x - rec.x;
+    const dz = player.z - rec.z;
+    const fwd = dx * hx + dz * hz;
+    // The player is a vehicle when driving or riding: then, exactly as for
+    // any other vehicle, one coming the OTHER way is the lanes' business and
+    // not something to brake for (a hailed CNG used to stop every oncoming
+    // vehicle it passed), and a follower matches its speed.
+    const inVehicle = player.driving || player.riding;
+    const along = player.vx * hx + player.vz * hz;
+    const oncoming = inVehicle && along < -1;
+    const halfWide = player.driving ? 1.3 : player.riding ? 0.9 : 0.25;
+    if (!oncoming && fwd > 0.5 && fwd < LOOK_AHEAD * 2.4 && Math.abs(dx * hz - dz * hx) < rec.r + halfWide) {
+      const playerLen = player.driving ? carMotion.halfL : player.riding ? 1.5 : player.radius;
+      target = Math.min(target, followSpeed(fwd - rec.hl - playerLen, Math.max(0, along), a.speed));
+    }
+  }
+  a.brakeTarget = target;
+}
+
+/** Speed multiplier for a follower `gap` metres behind a leader doing `lead` m/s. */
+function followSpeed(gap, lead, ownSpeed) {
+  if (gap >= SAFE_GAP) return 1;
+  const t = Math.max(0, gap / SAFE_GAP);
+  // A touch under the leader's speed when right behind it, so the gap reopens.
+  const match = Math.min(1, (lead / ownSpeed) * 0.85);
+  return match + t * (1 - match);
+}
+
+/**
+ * Drop `a` onto a route within the recycling band around the player, at a
+ * fresh point along it. Shared by recycleAgents (agents that drifted away)
+ * and the run-over respawns (ragdolls and wrecks whose time is up).
+ */
+function placeNearPlayer(a, index, player, rndFn, minRank) {
+  const route = routeNear(index, player.x, player.z, RECYCLE_NEAR, minRank, rndFn, RECYCLE_NEAR_MIN);
+  if (!route) return false;
+  a.route = route;
+  if (route.len > RECYCLE_NEAR * 1.5) {
+    const dNear = closestDistAlongRoute(route, player.x, player.z);
+    const offset = (rndFn() < 0.5 ? -1 : 1) * (RECYCLE_NEAR_MIN + rndFn() * (RECYCLE_NEAR - RECYCLE_NEAR_MIN));
+    a.d = ((dNear + offset) % route.len + route.len) % route.len;
+  } else {
+    a.d = rndFn() * route.len;
+  }
+  a.lane = (route.w / 2) * (0.35 + rndFn() * 0.3);
+  a.dir = rndFn() < 0.5 ? 1 : -1;
+  a.avoidX = 0;
+  a.avoidZ = 0;
+  a.sepX = 0;
+  a.sepZ = 0;
+  if (a.dodgeX !== undefined) {
+    a.dodgeX = 0;
+    a.dodgeZ = 0;
+  }
+  return true;
+}
+
+/**
+ * Bring a run-over agent back to life somewhere the player is not looking.
+ * It has to move NOW (its body is about to vanish), so unlike recycleAgents
+ * this cannot wait for it to be off-screen — instead it retries a few times
+ * for a spot behind the player, and takes what it has after that (110 m+
+ * away either way, per RECYCLE_NEAR_MIN).
+ */
+function respawnAgent(a, index, player, rndFn, minRank) {
+  for (let tries = 0; tries < 4; tries++) {
+    if (!placeNearPlayer(a, index, player, rndFn, minRank)) return false;
+    const s = sampleRoute(a.route, a.d);
+    if (!s || (s.x - player.x) * player.fx + (s.z - player.z) * player.fz < 0) break;
+  }
+  return true;
 }
 
 /**
@@ -399,6 +662,7 @@ function recycleAgents(sys, index, player, rndFn, minRank, allowed = Infinity) {
   for (let k = 0; k < n; k++) {
     const a = agents[cursor % agents.length];
     cursor++;
+    if (a.dead || a.wreck || a.free) continue; // off its rail; comes back by its own means
     const s0 = sampleRoute(a.route, a.d);
     if (!s0) continue;
     const dx = s0.x - player.x;
@@ -408,22 +672,7 @@ function recycleAgents(sys, index, player, rndFn, minRank, allowed = Infinity) {
     // Behind-the-player test: normalised direction to the agent vs facing.
     const dot = (dx / (dist || 1)) * player.fx + (dz / (dist || 1)) * player.fz;
     if (dot > RECYCLE_BEHIND_DOT) continue; // still in front: leave it alone
-    const route = routeNear(index, player.x, player.z, RECYCLE_NEAR, minRank, rndFn, RECYCLE_NEAR_MIN);
-    if (!route) continue;
-    a.route = route;
-    if (route.len > RECYCLE_NEAR * 1.5) {
-      const dNear = closestDistAlongRoute(route, player.x, player.z);
-      const offset = (rndFn() < 0.5 ? -1 : 1) * (RECYCLE_NEAR_MIN + rndFn() * (RECYCLE_NEAR - RECYCLE_NEAR_MIN));
-      a.d = ((dNear + offset) % route.len + route.len) % route.len;
-    } else {
-      a.d = rndFn() * route.len;
-    }
-    a.lane = (route.w / 2) * (0.35 + rndFn() * 0.3);
-    a.dir = rndFn() < 0.5 ? 1 : -1;
-    a.avoidX = 0;
-    a.avoidZ = 0;
-    a.sepX = 0;
-    a.sepZ = 0;
+    if (!placeNearPlayer(a, index, player, rndFn, minRank)) continue;
     moved++;
     if (moved >= allowed) break; // density cap reached for this frame
   }
@@ -551,6 +800,12 @@ function offsetPolyline(pts, dist) {
 }
 
 /** Arc length along route closest to (x, z). */
+/** Shortest ground distance from (x, z) to the route's polyline. */
+function distToRoute(route, x, z) {
+  const s = sampleRoute(route, closestDistAlongRoute(route, x, z));
+  return s ? Math.hypot(s.x - x, s.z - z) : Infinity;
+}
+
 function closestDistAlongRoute(route, x, z) {
   const pts = route.pts;
   const cum = route.cum;
@@ -740,6 +995,7 @@ export function buildTraffic(scene, origin = null) {
   const routeIndex = buildRouteIndex(routes);
 
   const systems = [];
+  let nextAgentId = 0;
   const nightMeshes = [];
   let totalVehicles = 0;
 
@@ -774,14 +1030,20 @@ export function buildTraffic(scene, origin = null) {
         colorIndex: Math.floor(rnd() * proto.colors.length),
         bob: rnd() * Math.PI * 2,
         // P7-COLLISION: avoidX/avoidZ is a decaying lateral push-out from the
-        // player, brakeMul (1 = free flow) comes from car-following +
-        // player avoidance, _dn is a scratch field for the car-following
-        // sort (see applyCarFollowing).
+        // player; brakeMul (1 = free flow) is eased toward brakeTarget, which
+        // lookAhead() sets from the gap to whatever is ahead.
         avoidX: 0,
         avoidZ: 0,
         brakeMul: 1,
+        brakeTarget: 1,
         playerBrake: 1,
-        _dn: 0,
+        stuck: 0, // s spent held near-stationary by lookAhead(); see PATIENCE
+        creep: 0,
+        _id: nextAgentId++, // fleet-wide, for lookAhead()'s who-yields tie-break
+        // Run-over physics: 100 = pristine, <= 0 = wreck (see hitVehicle).
+        hp: 100,
+        hitCd: 0,
+        wreck: false,
       });
     }
     // cfg.w (declared per TYPES entry, otherwise unused in this file) doubles
@@ -789,7 +1051,6 @@ export function buildTraffic(scene, origin = null) {
     // margin for its length, since a full oriented-box test would cost more
     // than the ~1 ms budget allows for hundreds of agents.
     const agentRadius = cfg.w / 2 + 0.5;
-    const routeGroups = groupByRouteAndDirection(agents);
 
     // Instanced meshes, split by level of detail. Near and far meshes are
     // re-packed every frame (update() below), so an agent has no fixed slot in
@@ -829,28 +1090,122 @@ export function buildTraffic(scene, origin = null) {
     const meshes = [...near, far, ...(lamps ? [lamps] : [])];
     const tints = proto.colors.map((hex) => new THREE.Color(hex));
 
-    systems.push({ type, agents, meshes, near, far, lamps, tints, routeGroups, agentRadius, minRank: cfg.minRank });
+    systems.push({ type, agents, meshes, near, far, lamps, tints, agentRadius, halfLen: HALF_LEN[type], minRank: cfg.minRank });
     totalVehicles += agents.length;
   }
 
+  shared.systems = systems;
+  let lodNearSq = LOD_NEAR_SQ;
   const dummy = new THREE.Object3D();
   // Mutated every frame, read by main.js/docs for the measured per-frame
   // cost of the P7-COLLISION traffic work (car-following + player
   // avoidance), kept separate from the rest of update() so it can be
   // reported without instrumenting the whole function.
-  const perf = { collisionMs: 0, pushedCount: 0 };
+  const perf = { collisionMs: 0, pushedCount: 0, dented: 0, wrecked: 0 };
+
+  // ---- Wrecks (see "Run-over physics" above): agents knocked off their
+  // rail, oldest first, never more than MAX_WRECKS of them.
+  const wrecks = [];
+  const tintScratch = new THREE.Color();
+
+  function reviveWreck(a, player) {
+    wrecks.splice(wrecks.indexOf(a), 1);
+    a.wreck = false;
+    a.hp = 100;
+    a.hitCd = 0;
+    if (player) respawnAgent(a, routeIndex, player, rnd, a.kminRank);
+  }
+
+  /**
+   * The car (carMotion) just hit `a`, drawn at (wx, wz) facing `heading` and
+   * travelling along its route sample `s`. Damage and the player's own speed
+   * loss both scale with mass, so a rickshaw folds and a bus is a wall.
+   */
+  function hitVehicle(a, sys, s, wx, wz, heading) {
+    const mass = VEHICLE_MASS[sys.type] || 1;
+    const drive = a.speed * a.dir * a.brakeMul;
+    const avx = s.ux * drive;
+    const avz = s.uz * drive;
+    const rel = Math.hypot(carMotion.vx - avx, carMotion.vz - avz);
+    const side = carMotion.hitLx < 0 ? -1 : 1;
+    a.hitCd = HIT_COOLDOWN;
+    a.hp -= (rel * DAMAGE_PER_MS) / mass;
+    perf.dented++;
+    reportImpact(1 - 0.8 * (mass / (mass + PLAYER_MASS)), Math.min(1, rel / 18), -side * 0.5);
+    if (a.hp > 0) return;
+
+    if (wrecks.length >= MAX_WRECKS) reviveWreck(wrecks[0], getPlayerProxy());
+    const give = (PLAYER_MASS / (mass + PLAYER_MASS)) * 1.2;
+    a.wreck = true;
+    a.kminRank = sys.minRank;
+    a.kx = wx;
+    a.kz = wz;
+    a.kyaw = heading;
+    a.kroll = 0;
+    a.krollTo = (WRECK_ROLL[sys.type] || 0) * side;
+    a.kvx = carMotion.vx * give + avx * 0.3;
+    a.kvz = carMotion.vz * give + avz * 0.3;
+    a.kspin = Math.max(-7, Math.min(7, (side * rel * 0.35) / mass));
+    a.ktime = 0;
+    a.ksmoke = 0;
+    a.avoidX = 0;
+    a.avoidZ = 0;
+    wrecks.push(a);
+    perf.wrecked++;
+  }
+
+  /** Slide, spin, tip and smoke one wreck. Returns false once it has respawned. */
+  function stepWreck(a, radius, dt, player) {
+    a.ktime += dt;
+    const left = WRECK_LIFETIME - a.ktime;
+    const pd2 = player ? (a.kx - player.x) ** 2 + (a.kz - player.z) ** 2 : 0;
+    if (left <= 0 || pd2 > GONE_DIST_SQ) {
+      reviveWreck(a, player);
+      return false;
+    }
+    const friction = Math.exp(-2.2 * dt);
+    a.kvx *= friction;
+    a.kvz *= friction;
+    a.kspin *= Math.exp(-2.5 * dt);
+    a.kyaw += a.kspin * dt;
+    a.kroll += (a.krollTo - a.kroll) * (1 - Math.exp(-6 * dt));
+    if (a.kvx * a.kvx + a.kvz * a.kvz > 0.01) {
+      const nx = a.kx + a.kvx * dt;
+      const nz = a.kz + a.kvz * dt;
+      const p = slideOnWorld(nx, nz, radius);
+      a.kx = p ? p[0] : nx;
+      a.kz = p ? p[1] : nz;
+      if (p && (Math.abs(p[0] - nx) > 1e-4 || Math.abs(p[1] - nz) > 1e-4)) {
+        a.kvx *= 0.4; // into a wall
+        a.kvz *= 0.4;
+        a.kspin *= 0.5;
+      }
+    }
+    // Smoke comes out of drive.js's shared sprite pool, which only animates
+    // while driving — so only feed it then, and only for wrecks close enough
+    // to be seen, so the tyre smoke it exists for is never starved.
+    a.ksmoke -= dt;
+    if (a.ksmoke <= 0 && pd2 < 80 * 80) {
+      a.ksmoke = 0.4;
+      const drive = window.__mirpur && window.__mirpur.drive;
+      if (drive && drive.driving && drive.smoke) drive.smoke(a.kx, 1.1, a.kz);
+    }
+    a.ksink = left < SINK_TIME ? (1 - left / SINK_TIME) * 2.5 : 0;
+    return true;
+  }
 
   /** @param {{x: number, z: number} | null} [viewPos] camera position, for level of detail */
   function update(dt, elapsed, viewPos = null) {
     const perfT0 = performance.now();
     const playerProxy = getPlayerProxy();
+    readCarMotion(playerProxy);
     let pushedCount = 0;
 
     // Cross-route separation, so vehicles on different routes and opposing
     // lanes stop driving through each other. Runs FIRST because it also
     // reports how many agents are currently near the player, which is what
     // caps the recycling below.
-    const sep = separateAgents(systems, playerProxy);
+    const sep = separateAgents(systems, playerProxy, true);
     perf.separated = sep.hits;
     perf.near = sep.near;
 
@@ -867,15 +1222,7 @@ export function buildTraffic(scene, origin = null) {
     }
     perf.recycled = recycled;
 
-    for (const sys of systems) {
-      const { agents, routeGroups } = sys;
-      // Car-following: one small group at a time, never all agents at once.
-      for (const [route, g] of routeGroups.entries()) {
-        if (g.pos.length) applyCarFollowing(agents, g.pos, route.len, true);
-        if (g.neg.length) applyCarFollowing(agents, g.neg, route.len, false);
-      }
-    }
-    perf.collisionMs = performance.now() - perfT0; // car-following portion; player-avoidance portion is folded in below
+    perf.collisionMs = performance.now() - perfT0; // separation + look-ahead braking; player-avoidance portion is folded in below
 
     for (const sys of systems) {
       const { agents, meshes, near, far, lamps, tints, agentRadius } = sys;
@@ -884,8 +1231,45 @@ export function buildTraffic(scene, origin = null) {
       let lampCount = 0;
       for (let i = 0; i < agents.length; i++) {
         const a = agents[i];
+        if (a.wreck) {
+          if (!stepWreck(a, agentRadius, dt, playerProxy)) continue; // respawned; drawn next frame
+          a._wx = a.kx; // still an obstacle to separateAgents() and the player
+          a._wz = a.kz;
+          dummy.position.set(a.kx, 0.16 - a.ksink, a.kz);
+          dummy.rotation.set(0, a.kyaw, a.kroll); // XYZ order: rolls about its own length, then yaws
+          dummy.updateMatrix();
+          tintScratch.copy(tints[a.colorIndex]).multiplyScalar(0.25); // burnt out
+          // Always the full model (it is next to the player by definition),
+          // and no lamps: a wreck's lights are off.
+          for (const mesh of near) {
+            mesh.setMatrixAt(nearCount, dummy.matrix);
+            if (mesh.instanceColor) mesh.setColorAt(nearCount, tintScratch);
+          }
+          nearCount++;
+          continue;
+        }
+        // Ease toward lookAhead()'s target: hard on the brakes, gentle pulling
+        // away. Agents outside separateAgents' active radius never get a
+        // fresh target, so theirs is reset to free flow here after each use.
+        let brakeTarget = a.brakeTarget;
+        a.brakeTarget = 1;
+        if (a.creep > 0) {
+          a.creep -= dt;
+          brakeTarget = Math.max(brakeTarget, 0.3);
+        } else if (brakeTarget < 0.1) {
+          a.stuck += dt;
+          if (a.stuck > PATIENCE) {
+            a.stuck = 0;
+            a.creep = CREEP_TIME;
+          }
+        } else {
+          a.stuck = 0;
+        }
+        a.brakeMul += (brakeTarget - a.brakeMul) * (1 - Math.exp(-(brakeTarget < a.brakeMul ? 9 : 2) * dt));
         a.d += a.speed * dt * a.dir * a.brakeMul * a.playerBrake;
         const s = sampleRoute(a.route, a.d);
+        a._hx = s.ux * a.dir; // travel direction, for next frame's lookAhead()
+        a._hz = s.uz * a.dir;
 
         // Offset into the LEFT-hand lane relative to travel direction
         // (Bangladesh drives on the left).
@@ -934,13 +1318,23 @@ export function buildTraffic(scene, origin = null) {
         if (a.hidden) continue;
         const wx = baseX + a.avoidX;
         const wz = baseZ + a.avoidZ;
+        // Run-over physics. Tested against the un-pushed position: the
+        // avoidance circle is wider than the car, so the pushed one would
+        // always be shoved clear before the car's box reached it.
+        if (a.hitCd > 0) a.hitCd -= dt;
+        else if (carMotion.active && carHits(baseX, baseZ, agentRadius)) {
+          hitVehicle(a, sys, s, wx, wz, heading);
+        }
         dummy.position.set(wx, 0.16 + bobY, wz);
         dummy.rotation.set(0, heading, 0);
         dummy.updateMatrix();
         const ex = viewPos ? wx - viewPos.x : 0;
         const ez = viewPos ? wz - viewPos.z : 0;
-        const tintColor = tints[a.colorIndex];
-        if (ex * ex + ez * ez < LOD_NEAR_SQ) {
+        // Damage shows as the paint darkening toward the wreck's burnt-out tint.
+        const tintColor = a.hp < 100
+          ? tintScratch.copy(tints[a.colorIndex]).multiplyScalar(0.4 + 0.006 * Math.max(0, a.hp))
+          : tints[a.colorIndex];
+        if (ex * ex + ez * ez < lodNearSq) {
           for (const mesh of near) {
             mesh.setMatrixAt(nearCount, dummy.matrix);
             if (mesh.instanceColor) mesh.setColorAt(nearCount, tintColor);
@@ -980,7 +1374,7 @@ export function buildTraffic(scene, origin = null) {
     for (const sys of systems) {
       if (!types.includes(sys.type)) continue;
       for (const a of sys.agents) {
-        if (a.hidden || a._wx === undefined) continue;
+        if (a.hidden || a.wreck || a._wx === undefined) continue;
         const d = Math.hypot(a._wx - x, a._wz - z);
         if (d > maxDist) continue;
         // Prefer the vehicle being looked at over one that is merely closer.
@@ -996,11 +1390,54 @@ export function buildTraffic(scene, origin = null) {
     return best;
   }
 
+  /**
+   * Opening cinematic only (src/intro-cinematic.js): move the FARTHEST agents
+   * of each type onto routes that pass within `within` metres of a point, so
+   * the avenue the camera is about to look down is as busy as the real one.
+   * Called once behind a black frame, which is why it may ignore the
+   * off-screen rule recycleAgents() lives by. The agents stay ordinary fleet
+   * members: separation and car-following sort them out, and the recycler
+   * thins them again once the player walks off.
+   * @param {number} x @param {number} z
+   * @param {Record<string, number>} quotas agents to move, per vehicle type
+   */
+  function gather(x, z, quotas, { within = 45, minAlong = 18, maxAlong = 210 } = {}) {
+    let moved = 0;
+    for (const sys of systems) {
+      const want = quotas[sys.type] ?? 0;
+      if (!want) continue;
+      const corridor = routes.filter((r) => r.rank >= sys.minRank && r.len > maxAlong && distToRoute(r, x, z) < within);
+      if (!corridor.length) continue;
+      const ranked = sys.agents
+        .filter((a) => !a.dead && !a.wreck && !a.free && !a.hidden)
+        .map((a) => { const s = sampleRoute(a.route, a.d); return { a, dist: s ? Math.hypot(s.x - x, s.z - z) : 0 }; })
+        .filter((rec) => rec.dist > maxAlong)
+        .sort((p, q) => q.dist - p.dist)
+        .slice(0, want);
+      for (const { a } of ranked) {
+        const route = corridor[Math.floor(rnd() * corridor.length)];
+        const offset = (rnd() < 0.5 ? -1 : 1) * (minAlong + rnd() * (maxAlong - minAlong));
+        a.route = route;
+        a.d = ((closestDistAlongRoute(route, x, z) + offset) % route.len + route.len) % route.len;
+        a.lane = (route.w / 2) * (0.35 + rnd() * 0.3);
+        a.dir = rnd() < 0.5 ? 1 : -1;
+        a.avoidX = 0; a.avoidZ = 0; a.sepX = 0; a.sepZ = 0;
+        moved++;
+      }
+    }
+    return moved;
+  }
+
   return {
     group,
     update,
     setNight,
+    gather,
+    /** @param {number} scale 0.5..1, from the perf governor's detail stage */
+    setDetailScale(scale) { lodNearSq = LOD_NEAR_SQ * scale * scale; },
     nearestAgent,
+    /** People currently on the carriageway near the player (streetlife/rides.js brakes for them). */
+    roadPeople: () => shared.pedObstacles,
     perf,
     systems, // P7-COLLISION verification only: read-only introspection of agent state
     stats: {
@@ -1276,9 +1713,425 @@ export function buildPedestrians(scene, count = 750, origin = null) {
 
   group.add(bodies);
   const PED_RADIUS = 0.3;
-  const perf = { collisionMs: 0, pushedCount: 0 };
+  const perf = { collisionMs: 0, pushedCount: 0, ranOver: 0 };
 
   const pedSys = { agents };
+  const fx = createHitFx();
+  group.add(fx.group);
+
+  // ---- Run-over ragdolls (see "Run-over physics" above). `ragdolls` holds
+  // agent indices, oldest first, never more than MAX_RAGDOLLS of them.
+  //
+  // How hard the car hit decides what happens next (a.fate):
+  //   under KNOCKDOWN_SPEED  knocked over, back up in a couple of seconds and
+  //                          either 'angry' (walks to the car, bangs on it and
+  //                          shouts) or 'flee' (runs from it);
+  //   under FATAL_SPEED      thrown; some survive and 'limp' away, bleeding;
+  //   above that             'dead': thrown hard, a pool spreads under them.
+  // A clip with the car's corner counts as a slower hit than a square one.
+  // Anyone who gets up becomes a FREE agent (a.free): off its rail, walking
+  // under stepFree() until it has made its way back to the footpath.
+  const ragdolls = [];
+  const LIE_Y = 0.18; // m, centre height of a body lying on the road
+  const KNOCKDOWN_SPEED = 8; // m/s
+  const FATAL_SPEED = 15;
+  const SURVIVE_CHANCE = 0.4; // of a hit between the two speeds above
+  const GET_UP_TIME = 1.2; // s from lying to standing
+  const MAX_ANGRY = 3; // at once; the rest of the knocked-down run instead
+  const BANG_REACH = 0.6; // m from the car's bodywork
+  const PANIC_RADIUS = 14; // m around a serious hit
+  let angryCount = 0;
+  const carProbe = { x: 0, z: 0, fx: 0, fz: 1, vx: 0, vz: 0, halfL: 2.3, halfW: 0.94 };
+
+  // Dhaka street Bangla, shown as-is in both language modes (owner-approved
+  // wording, 2026-09-21) — a shout is flavour, not UI, so it is not translated.
+  const LINES = {
+    angry: ['ওই মিয়া! চোখ কি কপালে তুলছেন?!', 'নাম গাড়ি থেইকা! নাম কইতাছি!', 'লাইসেন্স কি টাকা দিয়া কিনছস?!', 'বাপের রাস্তা পাইছস নাকি?!', 'আজকা তোর খবর আছে!'],
+    giveUp: ['পালাইতাছস ক্যান?! খাড়া!'],
+    parting: ['গাড়ি চালানো শিখা আয় আগে!'],
+    flee: ['ভাগ! ভাগ! পাগলা ড্রাইভার!', 'ও মাগো! বাঁচাও!'],
+    limp: ['উফ্... পাওডা গেল রে...', 'আল্লাহ গো... মইরা গেলাম...'],
+    panic: ['ভাগ! ভাগ! পাগলা ড্রাইভার!', 'ও মাগো! বাঁচাও!', 'ধর ধর! হালারে ধর!'],
+  };
+  const shout = (a, kind, secs) => fx.say(a, pick(LINES[kind]), secs);
+
+  function reviveRagdoll(k, player) {
+    const a = agents[ragdolls[k]];
+    ragdolls.splice(k, 1);
+    a.dead = false;
+    a.state = 'walk';
+    a.timer = 6 + rnd() * 14;
+    if (player && routeIndex) respawnAgent(a, routeIndex, player, rnd, 2);
+  }
+
+  /** The car (carMotion) just hit street agent `i`, drawn at (x, z). */
+  function launchRagdoll(a, i, x, z) {
+    if (a.free) endFree(a);
+    if (ragdolls.length >= MAX_RAGDOLLS) reviveRagdoll(0, getPlayerProxy());
+    const side = carMotion.hitLx < 0 ? -1 : 1;
+    const clipped = Math.abs(carMotion.hitLx) > carMotion.halfW * 0.8;
+    const speed = carMotion.speed * (clipped ? 0.6 : 1);
+    const hard = Math.min(1, speed / 25);
+    if (speed < KNOCKDOWN_SPEED) a.fate = angryCount < MAX_ANGRY && rnd() < 0.6 ? 'angry' : 'flee';
+    else if (speed < FATAL_SPEED) a.fate = rnd() < SURVIVE_CHANCE ? 'limp' : 'dead';
+    else a.fate = 'dead';
+    const minor = speed < KNOCKDOWN_SPEED;
+    // A clip spins them off to the side; a square hit carries them along.
+    const carry = minor ? 0.45 : 0.85;
+    const fling = side * (clipped ? 3 + rnd() * 2 : 1 + rnd() * 2);
+    a.dead = true;
+    a.rx = x;
+    a.ry = RAGDOLL_CENTRE * a.scale;
+    a.rz = z;
+    a.rvx = carMotion.vx * carry - carMotion.fz * fling;
+    a.rvz = carMotion.vz * carry + carMotion.fx * fling;
+    // Fast and square: up and over the bonnet.
+    a.rvy = minor ? 1.6 : 3 + hard * (clipped ? 4 : 8);
+    a.ryaw = Math.atan2(a.rvx, a.rvz);
+    a.rpitch = 0;
+    a.rspin = minor ? 5 : 4 + rnd() * 6 + hard * 5;
+    a.rtime = 0;
+    a.rdown = minor ? 1.5 + rnd() * 1.5 : 5 + rnd() * 3; // s lying before getting up
+    a.rup = 0;
+    a.rtrail = 0;
+    a.rpooled = false;
+    a.rbounced = false;
+    a.rlanded = false;
+    a.avoidX = 0;
+    a.avoidZ = 0;
+    a.dodgeX = 0; // (x, z) already includes any dodge; do not apply it twice later
+    a.dodgeZ = 0;
+    ragdolls.push(i);
+    perf.ranOver++;
+    fx.burst(x, 1.0 * a.scale, z, carMotion.vx, carMotion.vz, minor ? 4 : a.fate === 'dead' ? 16 : 9);
+    if (!minor) panicNear(x, z);
+    reportImpact(minor ? 0.985 : 0.97, Math.max(0.15, Math.min(0.6, hard)), -side * 0.12);
+  }
+
+  /** Everyone walking near a serious hit bolts along the footpath, away from the car. */
+  function panicNear(x, z) {
+    let screamed = false;
+    for (const b of agents) {
+      if (b.dead || b.free || b._wx === undefined) continue;
+      const dx = b._wx - x;
+      const dz = b._wz - z;
+      if (dx * dx + dz * dz > PANIC_RADIUS * PANIC_RADIUS) continue;
+      const s = sampleRoute(b.route, b.d);
+      if (!s) continue;
+      b.dir = dx * s.ux + dz * s.uz >= 0 ? 1 : -1;
+      b.panic = 3 + rnd() * 2.5;
+      b.state = 'walk';
+      b.timer = Math.max(b.timer, b.panic);
+      if (!screamed) {
+        screamed = true;
+        b.bx = b._wx;
+        b.by = 1.75 * b.scale;
+        b.bz = b._wz;
+        shout(b, 'panic', 1.8);
+      }
+    }
+  }
+
+  /**
+   * Integrate and pose the run-over figures. Called EVERY frame by main.js
+   * (the rest of this system runs at half rate, which is fine for a walk
+   * but visibly judders on a body in flight). Near-free when nobody has
+   * been hit: fx.update() returns at once with nothing alive.
+   */
+  function updateRagdolls(dt) {
+    fx.update(dt);
+    if (!ragdolls.length) return;
+    const player = getPlayerProxy();
+    for (let k = ragdolls.length - 1; k >= 0; k--) {
+      const i = ragdolls[k];
+      const a = agents[i];
+      a.rtime += dt;
+      if (!a.rlanded) {
+        a.rvy -= GRAVITY * dt;
+        a.ry += a.rvy * dt;
+        a.rpitch += a.rspin * dt;
+        if (a.ry <= LIE_Y && a.rvy < 0) {
+          a.ry = LIE_Y;
+          if (a.fate !== 'angry' && a.fate !== 'flee') fx.splat(a.rx, a.rz, 0.12 + rnd() * 0.15);
+          if (a.rvy < -5 && !a.rbounced) {
+            a.rbounced = true;
+            a.rvy *= -0.3;
+            a.rspin *= 0.5;
+          } else {
+            a.rlanded = true;
+            a.rlandedAt = a.rtime;
+            // Settle flat on whichever of face-up / face-down is nearer.
+            a.rpitchTarget = Math.round((a.rpitch - Math.PI / 2) / Math.PI) * Math.PI + Math.PI / 2;
+          }
+        }
+      } else if (a.rup === 0) {
+        const friction = Math.exp(-5 * dt);
+        a.rvx *= friction;
+        a.rvz *= friction;
+        a.rpitch += (a.rpitchTarget - a.rpitch) * (1 - Math.exp(-14 * dt));
+      }
+      const v2 = a.rvx * a.rvx + a.rvz * a.rvz;
+      if (v2 > 0.01 && a.rup === 0) {
+        const nx = a.rx + a.rvx * dt;
+        const nz = a.rz + a.rvz * dt;
+        const p = slideOnWorld(nx, nz, 0.35);
+        a.rx = p ? p[0] : nx;
+        a.rz = p ? p[1] : nz;
+        if (p && (Math.abs(p[0] - nx) > 1e-4 || Math.abs(p[1] - nz) > 1e-4)) {
+          a.rvx *= 0.3; // hit a wall: most of the throw is gone
+          a.rvz *= 0.3;
+        }
+        // Sliding along the road on a serious hit leaves a smear behind.
+        if (a.rlanded && a.fate !== 'angry' && a.fate !== 'flee' && v2 > 2) {
+          a.rtrail += Math.sqrt(v2) * dt;
+          if (a.rtrail > 0.55) {
+            a.rtrail = 0;
+            fx.splat(a.rx, a.rz, 0.1 + rnd() * 0.1, 0, a.ryaw, 2.2);
+          }
+        }
+      } else if (a.rlanded && !a.rpooled && (a.fate === 'dead' || a.fate === 'limp')) {
+        a.rpooled = true; // come to rest: the pool starts to spread
+        if (a.fate === 'dead') fx.splat(a.rx, a.rz, 0.55 + rnd() * 0.45, 6);
+        else fx.splat(a.rx, a.rz, 0.22 + rnd() * 0.12, 3);
+      }
+
+      if (a.fate === 'dead') {
+        const left = RAGDOLL_LIFETIME - a.rtime;
+        const gone = player && a.rlanded
+          && (a.rx - player.x) ** 2 + (a.rz - player.z) ** 2 > GONE_DIST_SQ;
+        if (left <= 0 || gone) {
+          reviveRagdoll(k, player);
+          continue;
+        }
+        const sink = left < SINK_TIME ? (1 - left / SINK_TIME) * 0.5 : 0;
+        figures.poseRagdoll(i, a.rx, a.ry - sink, a.rz, a.ryaw, a.rpitch, a.scale,
+          a.rlanded ? 0 : 18 * dt);
+        continue;
+      }
+
+      // A survivor: lies there for a.rdown, then pushes itself back upright.
+      let pitch = a.rpitch;
+      let y = a.ry;
+      if (a.rlanded && a.rtime - a.rlandedAt > a.rdown) {
+        a.rup = Math.min(1, a.rup + dt / (a.fate === 'limp' ? GET_UP_TIME * 1.8 : GET_UP_TIME));
+        const t = a.rup * a.rup * (3 - 2 * a.rup);
+        const upright = Math.round(a.rpitchTarget / (Math.PI * 2)) * Math.PI * 2;
+        pitch = a.rpitchTarget + (upright - a.rpitchTarget) * t;
+        y = LIE_Y + (RAGDOLL_CENTRE * a.scale - LIE_Y) * t;
+        if (a.rup >= 1) {
+          ragdolls.splice(k, 1);
+          beginFree(a);
+          continue;
+        }
+      }
+      figures.poseRagdoll(i, a.rx, y, a.rz, a.ryaw, pitch, a.scale, a.rlanded ? 0 : 18 * dt);
+    }
+    figures.flush();
+  }
+
+  // ---- Street sense (see `shared` above) ---------------------------------
+  let tickPlayer = null; // this tick's player proxy, for nearPlayer()
+
+  /** Close enough to the player for the looking and dodging to be worth doing. */
+  function nearPlayer(a) {
+    if (!tickPlayer || a._wx === undefined) return false;
+    return (a._wx - tickPlayer.x) ** 2 + (a._wz - tickPlayer.z) ** 2 < SMART_RADIUS_SQ;
+  }
+
+  function startCrossing(a) {
+    a.state = 'cross';
+    a.crossFrom = a.side;
+    a.crossTo = -a.side;
+    a.crossT = 0;
+    // ~3.5 s to cross, so it reads as a deliberate walk, not a jump.
+    a.timer = 3.5;
+  }
+
+  /**
+   * Jump out of the player's car's way. If the car's path over the next
+   * second or so passes through this person they react — after their own
+   * reaction time (a.nerve, 0.15-0.65 s, fixed per person) — by running
+   * straight out of the path, sideways to the car. At speed that is often
+   * not enough, which is the point; and a few simply freeze. Once the car
+   * has gone they drift back to where they were walking.
+   * Maintains a.dodgeX/dodgeZ; returns true while actively moving.
+   */
+  function updateDodge(a, x, z, hx, hz, dt) {
+    if (a.dodgeX === undefined) {
+      a.dodgeX = 0;
+      a.dodgeZ = 0;
+      a.dodgeT = 0;
+      a.calm = 0;
+      a.nerve = 0.15 + rnd() * 0.5;
+    }
+    if (carMotion.present && carMotion.speed > DODGE_MIN_SPEED) {
+      const rx = x + a.dodgeX - carMotion.x;
+      const rz = z + a.dodgeZ - carMotion.z;
+      if (rx * rx + rz * rz < 40 * 40) {
+        const ix = carMotion.vx / carMotion.speed;
+        const iz = carMotion.vz / carMotion.speed;
+        const ahead = rx * ix + rz * iz;
+        const lat = rz * ix - rx * iz; // + = to the right of the car's path
+        if (ahead > 0 && ahead < Math.min(DODGE_SIGHT, Math.max(12, carMotion.speed * 0.9 + 3))
+          && Math.abs(lat) < carMotion.halfW + 1.3) {
+          if (a.dodgeT === 0) {
+            a.frozen = rnd() < FREEZE_CHANCE;
+            a.dodgeSide = Math.abs(lat) > 0.15 ? Math.sign(lat) : (rnd() < 0.5 ? -1 : 1);
+            if (!a.frozen && rnd() < 0.12) {
+              a.bx = x;
+              a.by = 1.75 * a.scale;
+              a.bz = z;
+              shout(a, 'panic', 1.6);
+            }
+          }
+          a.dodgeT += dt;
+          a.calm = 1.2;
+          // Walking the same way the car is going = back turned to it: they
+          // only hear it coming, and react that much later.
+          const unseen = hx * ix + hz * iz > 0.3 ? BACK_TURNED_DELAY : 0;
+          if (a.frozen || a.dodgeT < a.nerve + unseen) return false;
+          const step = DODGE_SPEED * dt * a.dodgeSide;
+          const p = slideOnWorld(x + a.dodgeX - iz * step, z + a.dodgeZ + ix * step, PED_RADIUS);
+          a.dodgeX = p ? p[0] - x : a.dodgeX - iz * step;
+          a.dodgeZ = p ? p[1] - z : a.dodgeZ + ix * step;
+          return true;
+        }
+      }
+    }
+    a.dodgeT = 0;
+    if (a.dodgeX === 0 && a.dodgeZ === 0) return false;
+    a.calm -= dt;
+    if (a.calm > 0) return false;
+    const ease = Math.exp(-1.6 * dt);
+    a.dodgeX *= ease;
+    a.dodgeZ *= ease;
+    if (Math.abs(a.dodgeX) + Math.abs(a.dodgeZ) < 0.02) {
+      a.dodgeX = 0;
+      a.dodgeZ = 0;
+    }
+    return true;
+  }
+
+  // ---- Free agents: survivors on their feet, off their rail ---------------
+
+  function beginFree(a) {
+    a.dead = false;
+    a.free = true;
+    a.px = a.rx;
+    a.pz = a.rz;
+    a.pyaw = a.ryaw;
+    a.mode = a.fate;
+    a.modeT = 0;
+    a.bangT = 0;
+    a.lineT = 0;
+    a.state = 'walk';
+    a.panic = 0;
+    if (a.mode === 'angry') angryCount++;
+    a.bx = a.px;
+    a.by = 1.75 * a.scale;
+    a.bz = a.pz;
+    shout(a, a.mode, a.mode === 'limp' ? 3 : 2.2);
+  }
+
+  function endFree(a) {
+    if (a.mode === 'angry') angryCount--;
+    a.free = false;
+    a.mode = null;
+    a.timer = 6 + rnd() * 14;
+  }
+
+  /** Walk a free agent toward (tx, tz) at `speed`, sliding along walls. */
+  function walkFree(a, tx, tz, speed, dt) {
+    const dx = tx - a.px;
+    const dz = tz - a.pz;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-3) return 0;
+    const step = Math.min(d, speed * dt);
+    const p = slideOnWorld(a.px + (dx / d) * step, a.pz + (dz / d) * step, PED_RADIUS);
+    a.px = p ? p[0] : a.px + (dx / d) * step;
+    a.pz = p ? p[1] : a.pz + (dz / d) * step;
+    a.pyaw = Math.atan2(dx, dz);
+    return d - step;
+  }
+
+  /** One half-rate tick of a free agent `i`. `rail` is where its footpath spot is. */
+  function stepFree(a, i, dt, railX, railZ) {
+    a.modeT += dt;
+    const drive = window.__mirpur && window.__mirpur.drive;
+    const car = drive && drive.getMotion && drive.getMotion(carProbe) ? carProbe : null;
+    let moving = true;
+    let lunge = 0;
+
+    if (a.mode === 'angry') {
+      const carSpeed = car ? Math.hypot(car.vx, car.vz) : 0;
+      const far = car ? Math.hypot(car.x - a.px, car.z - a.pz) : Infinity;
+      if (!car || far > 22 || a.modeT > 16 || (carSpeed > 4 && far > 6)) {
+        shout(a, car ? 'giveUp' : 'parting', 2.4);
+        angryCount--;
+        a.mode = 'return';
+      } else {
+        // Nearest point on the car's bodywork, in the car's own frame.
+        const dx = a.px - car.x;
+        const dz = a.pz - car.z;
+        const lz = Math.max(-car.halfL, Math.min(car.halfL, dx * car.fx + dz * car.fz));
+        const lx = Math.max(-car.halfW, Math.min(car.halfW, dz * car.fx - dx * car.fz));
+        const nx = car.x + car.fx * lz - car.fz * lx;
+        const nz = car.z + car.fz * lz + car.fx * lx;
+        const gap = Math.hypot(nx - a.px, nz - a.pz);
+        if (gap > BANG_REACH) {
+          walkFree(a, nx, nz, 2.1, dt);
+        } else {
+          // Banging on it: a lunge at the bodywork every beat, and the car
+          // feels each one (thunk + a touch of camera shake, no speed loss).
+          moving = false;
+          a.pyaw = Math.atan2(nx - a.px, nz - a.pz);
+          a.bangT += dt;
+          lunge = Math.max(0, Math.sin(a.bangT * 9)) * 0.22;
+          if (a.bangT - (a.bangAt || 0) > 0.7) {
+            a.bangAt = a.bangT;
+            reportImpact(1, 0.14, 0);
+          }
+          a.lineT -= dt;
+          if (a.lineT <= 0) {
+            a.lineT = 2.6;
+            shout(a, 'angry', 2.2);
+          }
+          if (a.bangT > 7) {
+            shout(a, 'parting', 2.4);
+            angryCount--;
+            a.mode = 'return';
+          }
+        }
+      }
+    } else if (a.mode === 'flee' || a.mode === 'limp') {
+      const limp = a.mode === 'limp';
+      if (a.modeT > (limp ? 2.5 : 3.5) || !car) {
+        a.mode = 'return';
+        a.limping = limp;
+      } else {
+        const dx = a.px - car.x;
+        const dz = a.pz - car.z;
+        const d = Math.hypot(dx, dz) || 1;
+        walkFree(a, a.px + (dx / d) * 5, a.pz + (dz / d) * 5, limp ? 0.7 : 3.2, dt);
+        if (limp && rnd() < dt * 0.8) fx.splat(a.px, a.pz, 0.05 + rnd() * 0.05); // drips
+      }
+    } else {
+      // 'return': back to its own spot on the footpath, then carry on as before.
+      const left = walkFree(a, railX, railZ, a.limping ? 0.75 : a.speed * 1.3, dt);
+      if (left < 0.4 || a.modeT > 60) {
+        a.limping = false;
+        endFree(a);
+      }
+    }
+
+    a._wx = a.px;
+    a._wz = a.pz;
+    a.bx = a.px;
+    a.by = 1.75 * a.scale;
+    a.bz = a.pz;
+    figures.pose(i, a.px + Math.sin(a.pyaw) * lunge, 0, a.pz + Math.cos(a.pyaw) * lunge,
+      a.pyaw, a.scale, dt, moving);
+  }
 
   /**
    * Pose one station agent and write its matrix at instance index `idx`.
@@ -1321,6 +2174,10 @@ export function buildPedestrians(scene, count = 750, origin = null) {
   function update(dt) {
     const t0 = performance.now();
     const playerProxy = getPlayerProxy();
+    readCarMotion(playerProxy);
+    tickPlayer = playerProxy;
+    shared.player = playerProxy;
+    shared.pedObstacles.length = 0; // republished below, every tick
     let pushedCount = 0;
     // Keep the crowd with the player, off-screen only, and capped the same
     // way the vehicle fleet is (see MAX_PEDS_NEAR).
@@ -1339,6 +2196,7 @@ export function buildPedestrians(scene, count = 750, origin = null) {
     }
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
+      if (a.dead) continue; // run over: posed by updateRagdolls()
 
       // ---- Behaviour state machine (owner, 2026-09-07: "Pedestrians should
       // walk, stay, or stand on the road side, not directly in the road but
@@ -1353,6 +2211,9 @@ export function buildPedestrians(scene, count = 750, origin = null) {
           a.state = 'walk';
           a.side = a.crossTo;
           a.timer = 6 + rnd() * 14;
+        } else if (a.state === 'waitCross') {
+          a.state = 'walk'; // never got a gap: give up and walk on
+          a.timer = 6 + rnd() * 14;
         } else if (a.state === 'stand') {
           a.state = 'walk';
           a.timer = 8 + rnd() * 16;
@@ -1363,12 +2224,15 @@ export function buildPedestrians(scene, count = 750, origin = null) {
             a.state = 'stand';
             a.timer = 2.5 + rnd() * 7;
           } else if (roll < 0.24) {
-            a.state = 'cross';
-            a.crossFrom = a.side;
-            a.crossTo = -a.side;
-            a.crossT = 0;
-            // ~3.5 s to cross, so it reads as a deliberate walk, not a jump.
-            a.timer = 3.5;
+            // Wants to cross. Near the player it goes to the kerb and LOOKS
+            // first (the waitCross branch below); out of sight it just goes.
+            if (nearPlayer(a)) {
+              a.state = 'waitCross';
+              a.timer = CROSS_MAX_WAIT;
+              a.checkT = rnd() * 0.3;
+            } else {
+              startCrossing(a);
+            }
           } else {
             a.timer = 6 + rnd() * 14;
           }
@@ -1376,7 +2240,13 @@ export function buildPedestrians(scene, count = 750, origin = null) {
       }
 
       const walking = a.state === 'walk' || a.state === 'cross';
-      if (walking) a.d += a.speed * dt * a.dir * a.brakeMul * a.playerBrake;
+      // Bolting from a hit nearby (panicNear): same footpath, at a run.
+      let pace = 1;
+      if (a.panic > 0) {
+        a.panic -= dt;
+        pace = 2.8;
+      }
+      if (walking && !a.free) a.d += a.speed * pace * dt * a.dir * a.brakeMul * a.playerBrake;
       const s = sampleRoute(a.route, a.d);
 
       // Footpath offset. For corridor footpaths (isCorridorFoot), the route is already
@@ -1387,6 +2257,15 @@ export function buildPedestrians(scene, count = 750, origin = null) {
         ? (a.offJitter || 0)
         : (a.route.w / 2 + 1.8 + (a.offJitter || 0));
       const footOff = baseOff * (s.cornerEase ?? 1.0);
+      if (a.state === 'waitCross') {
+        // At the kerb, looking. A few times a second is plenty, and staggered
+        // (checkT starts random) so a crowd never all looks on one frame.
+        a.checkT -= dt;
+        if (a.checkT <= 0) {
+          a.checkT = 0.3;
+          if (roadIsClear(s.x, s.z, Math.abs(footOff))) startCrossing(a);
+        }
+      }
       let sideNow = a.side;
       if (a.state === 'cross') {
         a.crossT = Math.min(1, (a.crossT || 0) + dt / 3.5);
@@ -1395,16 +2274,50 @@ export function buildPedestrians(scene, count = 750, origin = null) {
         sideNow = a.crossFrom * (1 - t) + a.crossTo * t;
       }
       const off = footOff;
-      const x = s.x - s.uz * off * sideNow;
-      const z = s.z + s.ux * off * sideNow;
+      let x = s.x - s.uz * off * sideNow;
+      let z = s.z + s.ux * off * sideNow;
+      if (a.free) {
+        // A survivor off its rail. No push-aside (it has to reach the car to
+        // bang on it), but it can certainly be run over a second time.
+        if (carMotion.active && carHits(a.px, a.pz, PED_RADIUS)) launchRagdoll(a, i, a.px, a.pz);
+        else stepFree(a, i, dt, x, z);
+        if (a.free && nearPlayer(a)) shared.pedObstacles.push(a);
+        continue;
+      }
+      const railX = s.x - s.uz * off * sideNow;
+      const railZ = s.z + s.ux * off * sideNow;
+      // Jumping out of the car's way moves where the person really IS, so
+      // everything below (the hit test included) uses the dodged position.
+      const dodging = updateDodge(a, railX, railZ, s.ux * a.dir, s.uz * a.dir, dt);
+      x = railX + a.dodgeX;
+      z = railZ + a.dodgeZ;
       a._wx = x;
       a._wz = z;
+      if (a.state === 'cross' && nearPlayer(a)) shared.pedObstacles.push(a);
       // P7-COLLISION: "pedestrians must not be walked or driven through" —
       // same distance-culled push-out as vehicles, no car-following (a
       // footpath crowd queuing nose-to-tail is not the requirement here).
       if (applyPlayerAvoidance(a, x, z, PED_RADIUS, playerProxy)) pushedCount++;
-      figures.pose(i, x + a.avoidX, 0, z + a.avoidZ,
-        Math.atan2(s.ux * a.dir, s.uz * a.dir), a.scale, dt, walking);
+      // Tested against the agent's own rail position, NOT the pushed-aside
+      // one: the avoidance circle is wider than the car, so a pushed figure
+      // would otherwise always be shoved clear before the box reached it.
+      if (carMotion.active && carHits(x, z, PED_RADIUS)) {
+        launchRagdoll(a, i, x + a.avoidX, z + a.avoidZ);
+        continue;
+      }
+      // Waiting to cross, they face the road they are watching.
+      const heading = a.state === 'waitCross'
+        ? Math.atan2(s.x - x, s.z - z)
+        : Math.atan2(s.ux * a.dir, s.uz * a.dir);
+      figures.pose(i, x + a.avoidX, 0, z + a.avoidZ, heading, a.scale, dt, walking || dodging);
+    }
+    // Bodies lying in the road are something to stop for, too.
+    for (const i of ragdolls) {
+      const a = agents[i];
+      if (!a.rlanded) continue;
+      a._wx = a.rx;
+      a._wz = a.rz;
+      shared.pedObstacles.push(a);
     }
     // ---- Station agents (P11-F): their own branch, own state machine, no
     // separateAgents/recycleAgents/applyPlayerAvoidance — they are scenery
@@ -1488,6 +2401,10 @@ export function buildPedestrians(scene, count = 750, origin = null) {
   return {
     group,
     update,
+    updateRagdolls,
+    /** Settings > Blood. */
+    setBlood: fx.setBlood,
+    agents, // verification only, like buildTraffic's `systems`
     stats: { count: streetCount, stationAgents: stationAgents.length },
     perf,
   };

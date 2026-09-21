@@ -29,6 +29,10 @@ collision, drive and streetlife objects (`docs/DEBUG-HOOK.md`).
 
 ## Performance is a feature
 
+**Read [docs/PERFORMANCE.md](../PERFORMANCE.md) first**: what is expensive in
+this game, how to measure it, and the checklist a change has to pass. The
+points below are the summary.
+
 - **Draw calls:** merge static geometry, instance repeated props
   (`docs/DRAWCALLS.md`, `docs/LOD-PASS.md`).
 - **Streaming:** the city loads in tiles around the player

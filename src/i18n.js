@@ -16,7 +16,8 @@ const BN = {
   // HUD chrome
   Mode: 'মোড', Time: 'সময়', Controls: 'কন্ট্রোল', Menu: 'মেনু',
   'Drive (V)': 'গাড়ি চালান (V)', 'Exit car (V)': 'গাড়ি থেকে নামুন (V)', 'Travel · O': 'ভ্রমণ · O',
-  Walk: 'হাঁটা', Drive: 'ড্রাইভ', Fly: 'উড়ান', Metro: 'মেট্রো',
+  Walk: 'হাঁটা', Drive: 'ড্রাইভ', Ride: 'যাত্রী', Fly: 'উড়ান', Metro: 'মেট্রো',
+  Rain: 'বৃষ্টি',
   'Morning haze': 'ভোরের কুয়াশা', Midday: 'দুপুর', 'Late afternoon': 'বিকেল', Dusk: 'সন্ধ্যা', Night: 'রাত',
   'DHAKA / FREE ROAM': 'ঢাকা / ফ্রি রোম', 'Mirpur corridor': 'মিরপুর করিডোর',
   Mirpur: 'মিরপুর', 'Mirpur North': 'মিরপুর উত্তর', 'Bijoy Sarani': 'বিজয় সরণি',
@@ -25,8 +26,10 @@ const BN = {
   Paused: 'বিরতি', Resume: 'খেলায় ফিরুন', Settings: 'সেটিংস', 'Photo mode': 'ফটো মোড',
   'Travel menu': 'ভ্রমণ মেনু', 'Back to title': 'শুরুর পর্দায় ফিরুন', Back: 'ফিরে যান',
   Volume: 'শব্দ', 'Mouse sensitivity': 'মাউস সংবেদনশীলতা', Graphics: 'গ্রাফিক্স',
+  'Anti-aliasing': 'অ্যান্টি-অ্যালিয়াসিং', 'Off (faster)': 'বন্ধ (দ্রুত)',
+  'Off helps most on integrated graphics. Changing it reloads the game.': 'ইন্টিগ্রেটেড গ্রাফিক্সে বন্ধ রাখলে সবচেয়ে বেশি কাজে দেয়। বদলালে গেম রিলোড হবে।',
   Auto: 'স্বয়ংক্রিয়', Performance: 'পারফরম্যান্স', Language: 'ভাষা',
-  'Show FPS counter': 'FPS কাউন্টার দেখান', 'Source on GitHub': 'গিটহাবে সোর্স কোড',
+  'Show FPS counter': 'FPS কাউন্টার দেখান', Blood: 'রক্ত', 'Source on GitHub': 'গিটহাবে সোর্স কোড',
   'Save photo': 'ছবি সংরক্ষণ', 'Exit photo mode': 'ফটো মোড বন্ধ করুন',
   // Travel menu
   Here: 'এই এলাকায়', 'By metro': 'মেট্রোতে', Teleport: 'টেলিপোর্ট', 'Ride the metro': 'মেট্রোতে যান',

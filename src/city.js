@@ -458,12 +458,20 @@ let lodCalled = false;
  * main.js must call this once per frame; see docs/LOD-PASS.md for the exact
  * line. Cheap: ~100 tiles, a couple of Math.abs each.
  */
+// Live copy of LOD_TILE_VISIBLE_RANGE. The perf governor (src/perf-governor.js)
+// pulls it in on machines that cannot hold 60 fps even at the resolution floor.
+let tileVisibleRange = LOD_TILE_VISIBLE_RANGE;
+/** @param {number} scale 0.5..1 */
+export function setBuildingLodScale(scale) {
+  tileVisibleRange = LOD_TILE_VISIBLE_RANGE * scale;
+}
+
 export function updateBuildingLOD(playerX, playerZ) {
   lodCalled = true;
   for (const t of tileGroups) {
     const dx = Math.abs(playerX - t.cx);
     const dz = Math.abs(playerZ - t.cz);
-    t.group.visible = Math.max(dx, dz) < LOD_TILE_VISIBLE_RANGE;
+    t.group.visible = Math.max(dx, dz) < tileVisibleRange;
   }
 
   // P2-STREAMING: build the single nearest still-pending tile within
@@ -502,7 +510,7 @@ export function updateBuildingLOD(playerX, playerZ) {
     } else {
       const dx = Math.abs(playerX - bucket.cx);
       const dz = Math.abs(playerZ - bucket.cz);
-      tileGroup.visible = Math.max(dx, dz) < LOD_TILE_VISIBLE_RANGE;
+      tileGroup.visible = Math.max(dx, dz) < tileVisibleRange;
       tileGroups.push({ group: tileGroup, cx: bucket.cx, cz: bucket.cz, key: nearestKey });
     }
   }
