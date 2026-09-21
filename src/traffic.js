@@ -5,13 +5,15 @@
  * footpaths. The mix is deliberately Dhaka: cycle-rickshaws outnumber
  * everything else, then CNG auto-rickshaws, then buses and private cars.
  *
- * Every vehicle type is one InstancedMesh per body part, so the whole traffic
- * system costs about a dozen draw calls no matter how many vehicles are moving.
+ * Every vehicle type is at most three InstancedMeshes (src/vehicle-models.js),
+ * so the whole traffic system costs about a dozen draw calls no matter how
+ * many vehicles are moving.
  */
 
 import * as THREE from 'three';
 import { METRO, centreAlignment } from './metro.js';
 import { createPedestrianModel } from './pedestrian-model.js';
+import { vehicleGeometry } from './vehicle-models.js';
 
 // Counts were tuned for the old two-station map (436 roads). The north
 // corridor has 1,369 drivable routes over 4.2 km, so the same fleet spread
@@ -52,10 +54,16 @@ const RECYCLE_PER_FRAME = 8; // agents examined per frame, amortised round-robin
 const MAX_VEHICLES_NEAR = 60;
 const MAX_PEDS_NEAR = 95;
 
+// Beyond this distance from the camera a vehicle is drawn with its few-box far
+// model (src/vehicle-models.js). At 70 m a rickshaw is ~25 px tall on a 1080p
+// screen, where the puller's limbs and the hood ribs are below a pixel.
+const LOD_NEAR_SQ = 70 * 70;
+
 /** Rickshaw hoods are painted in loud, saturated colours. */
 const RICKSHAW_COLORS = [0xb4272c, 0x1c5fa8, 0x137a4a, 0x8b2f8f, 0xd18f16, 0x145f6e];
 const CAR_COLORS = [0xd8d8d4, 0x2b2b30, 0x8b1f24, 0x243d63, 0x9a9a96, 0x53585c];
 const BUS_COLORS = [0xa8302c, 0x1d5c8f, 0xcfc4a8, 0x2f6b45, 0xb5762a];
+const BIKE_COLORS = [0xb3201f, 0x1b1d22, 0x1f4f9c, 0xd8d8d4, 0xd07a12, 0x2d6b3f];
 
 // ---------------------------------------------------------------------------
 // P7-COLLISION item 3 (docs/PLAN-COLLISION-PHYSICS.md gap #2): traffic was a
@@ -229,146 +237,35 @@ function pick(arr) {
 // ---------------------------------------------------------------------------
 // Vehicle prototypes
 //
-// Each returns a list of { geometry, material, count } part descriptors; the
-// caller allocates an InstancedMesh per part and writes a matrix per vehicle.
+// The models themselves live in src/vehicle-models.js, merged down to at most
+// three geometries per type: the panels that take the vehicle's colour, the
+// fixed-colour detail (vertex colours), and the night-only lamps. One
+// InstancedMesh each, so a type costs three draw calls and three matrix
+// writes per vehicle per frame (the old boxes cost 5-11 of each).
 // Local space: +Z is forward, Y is up, origin at road level.
 // ---------------------------------------------------------------------------
 
-function rickshawParts() {
-  const frame = new THREE.BoxGeometry(0.95, 0.42, 1.85);
-  frame.translate(0, 0.62, 0);
-
-  const seatBack = new THREE.BoxGeometry(0.9, 0.62, 0.14);
-  seatBack.translate(0, 1.06, -0.72);
-
-  // The folding canopy: a half-cylinder over the passenger seat.
-  const hood = new THREE.CylinderGeometry(0.62, 0.62, 0.98, 12, 1, true, 0, Math.PI);
-  hood.rotateZ(Math.PI / 2);
-  hood.rotateY(Math.PI / 2);
-  hood.translate(0, 1.16, -0.42);
-
-  const wheel = new THREE.CylinderGeometry(0.34, 0.34, 0.08, 10);
-  wheel.rotateZ(Math.PI / 2);
-
-  const rider = new THREE.BoxGeometry(0.34, 0.72, 0.26);
-  rider.translate(0, 0.98, 0.72);
-
-  return [
-    { key: 'frame', geometry: frame, colored: false, color: 0x2f3a44 },
-    { key: 'seat', geometry: seatBack, colored: true },
-    { key: 'hood', geometry: hood, colored: true, doubleSide: true },
-    { key: 'wheelL', geometry: wheel, colored: false, color: 0x1a1a1a, offset: [0.48, 0.34, -0.55] },
-    { key: 'wheelR', geometry: wheel, colored: false, color: 0x1a1a1a, offset: [-0.48, 0.34, -0.55] },
-    { key: 'wheelF', geometry: wheel, colored: false, color: 0x1a1a1a, offset: [0, 0.34, 0.85] },
-    { key: 'rider', geometry: rider, colored: false, color: 0x6b5a48 },
-  ];
+function partsFor(type) {
+  const { paint, detail, lamps, doubleSide } = vehicleGeometry(type);
+  const parts = [{ key: 'detail', geometry: detail, colored: false, doubleSide }];
+  if (paint) parts.unshift({ key: 'paint', geometry: paint, colored: true, doubleSide });
+  if (lamps) parts.push({ key: 'lamps', geometry: lamps, colored: false, basic: true, night: true });
+  return parts;
 }
 
-/** Small emissive headlight/taillight boxes, added to car/bus/cng only.
- * MeshBasicMaterial so they read as lit regardless of scene lighting; hidden
- * by day and shown at night via the returned `setNight()`. */
-function lampParts(hw, hh, hz, tz, side) {
-  const headGeo = new THREE.BoxGeometry(hw, hh, 0.06);
-  const tailGeo = new THREE.BoxGeometry(hw, hh, 0.06);
-  return [
-    { key: 'headL', geometry: headGeo, colored: false, color: 0xfff2c0, basic: true, night: true, offset: [side, 0.5, hz] },
-    { key: 'headR', geometry: headGeo, colored: false, color: 0xfff2c0, basic: true, night: true, offset: [-side, 0.5, hz] },
-    { key: 'tailL', geometry: tailGeo, colored: false, color: 0xff2a20, basic: true, night: true, offset: [side, 0.5, tz] },
-    { key: 'tailR', geometry: tailGeo, colored: false, color: 0xff2a20, basic: true, night: true, offset: [-side, 0.5, tz] },
-  ];
-}
-
-function cngParts() {
-  // Green body, black canopy: the standard Dhaka auto-rickshaw livery.
-  const body = new THREE.BoxGeometry(1.3, 1.05, 2.5);
-  body.translate(0, 0.72, 0);
-
-  const roof = new THREE.BoxGeometry(1.34, 0.5, 2.1);
-  roof.translate(0, 1.5, -0.1);
-
-  const nose = new THREE.BoxGeometry(0.7, 0.7, 0.6);
-  nose.translate(0, 0.75, 1.35);
-
-  const wheel = new THREE.CylinderGeometry(0.3, 0.3, 0.16, 10);
-  wheel.rotateZ(Math.PI / 2);
-
-  return [
-    { key: 'body', geometry: body, colored: false, color: 0x1f7a3d },
-    { key: 'roof', geometry: roof, colored: false, color: 0x1a1a1c },
-    { key: 'nose', geometry: nose, colored: false, color: 0x1f7a3d },
-    { key: 'wheelL', geometry: wheel, colored: false, color: 0x141414, offset: [0.62, 0.3, -0.75] },
-    { key: 'wheelR', geometry: wheel, colored: false, color: 0x141414, offset: [-0.62, 0.3, -0.75] },
-    { key: 'wheelF', geometry: wheel, colored: false, color: 0x141414, offset: [0, 0.3, 1.15] },
-    ...lampParts(0.14, 0.1, 1.62, -1.22, 0.42),
-  ];
-}
-
-function carParts() {
-  const body = new THREE.BoxGeometry(1.72, 0.78, 4.1);
-  body.translate(0, 0.62, 0);
-  const cabin = new THREE.BoxGeometry(1.6, 0.62, 2.1);
-  cabin.translate(0, 1.3, -0.25);
-  const wheel = new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10);
-  wheel.rotateZ(Math.PI / 2);
-
-  return [
-    { key: 'body', geometry: body, colored: true },
-    { key: 'cabin', geometry: cabin, colored: false, color: 0x33393d },
-    { key: 'wFL', geometry: wheel, colored: false, color: 0x151515, offset: [0.82, 0.31, 1.3] },
-    { key: 'wFR', geometry: wheel, colored: false, color: 0x151515, offset: [-0.82, 0.31, 1.3] },
-    { key: 'wRL', geometry: wheel, colored: false, color: 0x151515, offset: [0.82, 0.31, -1.3] },
-    { key: 'wRR', geometry: wheel, colored: false, color: 0x151515, offset: [-0.82, 0.31, -1.3] },
-    ...lampParts(0.2, 0.13, 2.04, -2.04, 0.62),
-  ];
-}
-
-function busParts() {
-  const body = new THREE.BoxGeometry(2.5, 2.5, 10.5);
-  body.translate(0, 1.55, 0);
-  const roof = new THREE.BoxGeometry(2.44, 0.22, 10.2);
-  roof.translate(0, 2.9, 0);
-  const glass = new THREE.BoxGeometry(2.54, 0.85, 8.4);
-  glass.translate(0, 2.25, -0.4);
-  const wheel = new THREE.CylinderGeometry(0.48, 0.48, 0.3, 10);
-  wheel.rotateZ(Math.PI / 2);
-
-  return [
-    { key: 'body', geometry: body, colored: true },
-    { key: 'roof', geometry: roof, colored: false, color: 0x9c968a },
-    { key: 'glass', geometry: glass, colored: false, color: 0x2b3336 },
-    { key: 'wFL', geometry: wheel, colored: false, color: 0x141414, offset: [1.15, 0.48, 3.4] },
-    { key: 'wFR', geometry: wheel, colored: false, color: 0x141414, offset: [-1.15, 0.48, 3.4] },
-    { key: 'wRL', geometry: wheel, colored: false, color: 0x141414, offset: [1.15, 0.48, -3.2] },
-    { key: 'wRR', geometry: wheel, colored: false, color: 0x141414, offset: [-1.15, 0.48, -3.2] },
-    ...lampParts(0.26, 0.18, 5.26, -5.26, 0.95),
-  ];
-}
-
-function bikeParts() {
-  const body = new THREE.BoxGeometry(0.32, 0.4, 1.75);
-  body.translate(0, 0.62, 0);
-  const rider = new THREE.BoxGeometry(0.42, 0.85, 0.34);
-  rider.translate(0, 1.28, -0.1);
-  const helmet = new THREE.SphereGeometry(0.17, 8, 6);
-  helmet.translate(0, 1.82, -0.1);
-  const wheel = new THREE.CylinderGeometry(0.31, 0.31, 0.09, 10);
-  wheel.rotateZ(Math.PI / 2);
-
-  return [
-    { key: 'body', geometry: body, colored: true },
-    { key: 'rider', geometry: rider, colored: false, color: 0x3c4450 },
-    { key: 'helmet', geometry: helmet, colored: false, color: 0x1e1e22 },
-    { key: 'wF', geometry: wheel, colored: false, color: 0x141414, offset: [0, 0.31, 0.72] },
-    { key: 'wR', geometry: wheel, colored: false, color: 0x141414, offset: [0, 0.31, -0.72] },
-  ];
+/** The few-box stand-in drawn beyond LOD_NEAR instead of the full model. */
+function farPartFor(type) {
+  const { far, doubleSide } = vehicleGeometry(type);
+  return { key: 'far', geometry: far, colored: true, doubleSide };
 }
 
 const PROTOTYPES = {
-  rickshaw: { parts: rickshawParts, colors: RICKSHAW_COLORS },
-  cng: { parts: cngParts, colors: CAR_COLORS },
-  car: { parts: carParts, colors: CAR_COLORS },
-  bus: { parts: busParts, colors: BUS_COLORS },
-  bike: { parts: bikeParts, colors: CAR_COLORS },
+  rickshaw: { parts: () => partsFor('rickshaw'), colors: RICKSHAW_COLORS },
+  // Always the green livery: white leaves the baked colours of the far model untinted.
+  cng: { parts: () => partsFor('cng'), colors: [0xffffff] },
+  car: { parts: () => partsFor('car'), colors: CAR_COLORS },
+  bus: { parts: () => partsFor('bus'), colors: BUS_COLORS },
+  bike: { parts: () => partsFor('bike'), colors: BIKE_COLORS },
 };
 
 /**
@@ -387,10 +284,10 @@ export function buildHireVehicle(type, colorIndex = 0) {
     if (p.night) continue;
     const Material = p.basic ? THREE.MeshBasicMaterial : THREE.MeshLambertMaterial;
     const mesh = new THREE.Mesh(p.geometry, new Material({
-      color: p.colored ? tint : p.color,
+      color: p.colored ? tint : 0xffffff,
+      vertexColors: true,
       side: p.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
     }));
-    if (p.offset) mesh.position.set(p.offset[0], p.offset[1], p.offset[2]);
     mesh.castShadow = !p.basic;
     vehicle.add(mesh);
   }
@@ -894,43 +791,45 @@ export function buildTraffic(scene, origin = null) {
     const agentRadius = cfg.w / 2 + 0.5;
     const routeGroups = groupByRouteAndDirection(agents);
 
-    // Per-part instanced meshes.
-    const partDescs = proto.parts();
-    const meshes = [];
-    for (const p of partDescs) {
+    // Instanced meshes, split by level of detail. Near and far meshes are
+    // re-packed every frame (update() below), so an agent has no fixed slot in
+    // them and its colour is written alongside its matrix.
+    const makeMesh = (p) => {
       const matOpts = {
-        color: p.colored ? 0xffffff : p.color,
+        color: 0xffffff,
         side: p.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
-        vertexColors: false,
+        vertexColors: true, // fixed colours are baked per vertex (vehicle-models.js)
       };
       const mat = p.basic ? new THREE.MeshBasicMaterial(matOpts) : new THREE.MeshLambertMaterial(matOpts);
       const mesh = new THREE.InstancedMesh(p.geometry, mat, agents.length);
       mesh.castShadow = !p.basic;
       mesh.frustumCulled = false;
       mesh.name = `traffic:${type}:${p.key}`;
+      if (p.colored) {
+        mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(agents.length * 3), 3);
+        mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      }
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      group.add(mesh);
+      return mesh;
+    };
+    const near = [];
+    let lamps = null;
+    for (const p of proto.parts()) {
+      const mesh = makeMesh(p);
       if (p.night) {
         mesh.visible = false;
         nightMeshes.push(mesh);
+        lamps = mesh;
+      } else {
+        near.push(mesh);
       }
-
-      if (p.colored) {
-        mesh.instanceColor = new THREE.InstancedBufferAttribute(
-          new Float32Array(agents.length * 3),
-          3
-        );
-        const c = new THREE.Color();
-        agents.forEach((a, i) => {
-          c.setHex(proto.colors[a.colorIndex]);
-          mesh.setColorAt(i, c);
-        });
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      }
-
-      group.add(mesh);
-      meshes.push({ mesh, offset: p.offset || null });
     }
+    const far = makeMesh(farPartFor(type));
+    const meshes = [...near, far, ...(lamps ? [lamps] : [])];
+    const tints = proto.colors.map((hex) => new THREE.Color(hex));
 
-    systems.push({ type, agents, meshes, routeGroups, agentRadius, minRank: cfg.minRank });
+    systems.push({ type, agents, meshes, near, far, lamps, tints, routeGroups, agentRadius, minRank: cfg.minRank });
     totalVehicles += agents.length;
   }
 
@@ -941,7 +840,8 @@ export function buildTraffic(scene, origin = null) {
   // reported without instrumenting the whole function.
   const perf = { collisionMs: 0, pushedCount: 0 };
 
-  function update(dt, elapsed) {
+  /** @param {{x: number, z: number} | null} [viewPos] camera position, for level of detail */
+  function update(dt, elapsed, viewPos = null) {
     const perfT0 = performance.now();
     const playerProxy = getPlayerProxy();
     let pushedCount = 0;
@@ -978,7 +878,10 @@ export function buildTraffic(scene, origin = null) {
     perf.collisionMs = performance.now() - perfT0; // car-following portion; player-avoidance portion is folded in below
 
     for (const sys of systems) {
-      const { agents, meshes, agentRadius } = sys;
+      const { agents, meshes, near, far, lamps, tints, agentRadius } = sys;
+      let nearCount = 0;
+      let farCount = 0;
+      let lampCount = 0;
       for (let i = 0; i < agents.length; i++) {
         const a = agents[i];
         a.d += a.speed * dt * a.dir * a.brakeMul * a.playerBrake;
@@ -1027,30 +930,36 @@ export function buildTraffic(scene, origin = null) {
           ? Math.sin(elapsed * 7 + a.bob) * 0.018
           : 0;
 
-        for (const { mesh, offset } of meshes) {
-          if (offset) {
-            // Rotate the local part offset into world space.
-            const ox = offset[0];
-            const oy = offset[1];
-            const oz = offset[2];
-            const cos = Math.cos(heading);
-            const sin = Math.sin(heading);
-            dummy.position.set(
-              baseX + a.avoidX + ox * cos + oz * sin,
-              0.16 + oy + bobY,
-              baseZ + a.avoidZ - ox * sin + oz * cos
-            );
-          } else {
-            dummy.position.set(baseX + a.avoidX, 0.16 + bobY, baseZ + a.avoidZ);
+        // A hailed vehicle is drawn by streetlife/rides.js for the length of the ride.
+        if (a.hidden) continue;
+        const wx = baseX + a.avoidX;
+        const wz = baseZ + a.avoidZ;
+        dummy.position.set(wx, 0.16 + bobY, wz);
+        dummy.rotation.set(0, heading, 0);
+        dummy.updateMatrix();
+        const ex = viewPos ? wx - viewPos.x : 0;
+        const ez = viewPos ? wz - viewPos.z : 0;
+        const tintColor = tints[a.colorIndex];
+        if (ex * ex + ez * ez < LOD_NEAR_SQ) {
+          for (const mesh of near) {
+            mesh.setMatrixAt(nearCount, dummy.matrix);
+            if (mesh.instanceColor) mesh.setColorAt(nearCount, tintColor);
           }
-          dummy.rotation.set(0, heading, 0);
-          // A hailed vehicle is drawn by streetlife/rides.js for the length of the ride.
-          dummy.scale.setScalar(a.hidden ? 0 : 1);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(i, dummy.matrix);
+          nearCount++;
+        } else {
+          far.setMatrixAt(farCount, dummy.matrix);
+          far.setColorAt(farCount, tintColor);
+          farCount++;
         }
+        if (lamps) lamps.setMatrixAt(lampCount++, dummy.matrix);
       }
-      for (const { mesh } of meshes) mesh.instanceMatrix.needsUpdate = true;
+      for (const mesh of near) mesh.count = nearCount;
+      far.count = farCount;
+      if (lamps) lamps.count = lampCount;
+      for (const mesh of meshes) {
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
     }
     perf.pushedCount = pushedCount;
   }

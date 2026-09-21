@@ -1710,7 +1710,7 @@ async function main() {
     sky.update(activePos, elapsed);
     sky.updateClouds(activePos, elapsed);
     const stationlifeLine = stationlife.update(dt, player);
-    traffic.update(dt, elapsed);
+    traffic.update(dt, elapsed, camera.position);
     night.update(player.position, dt);
 
     // Non-critical systems run at half rate (~30 Hz) to save CPU. They receive

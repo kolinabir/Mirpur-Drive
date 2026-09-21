@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Dev-only turntable for the traffic models (src/vehicle-models.js).
+     `npm run dev`, then open /tools/vehicle-preview.html. Not part of the build.
+     ?view=front|rear|side|top picks a fixed camera; default slowly orbits. -->
+<meta charset="utf-8" />
+<title>Vehicle preview</title>
+<style>html, body { margin: 0; height: 100%; background: #8fa3ad; overflow: hidden; } canvas { display: block; }</style>
+<canvas id="c"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { buildHireVehicle } from '/src/traffic.js';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8fa3ad);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x556055, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(6, 10, 8);
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), new THREE.MeshLambertMaterial({ color: 0x4a4d4c }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const lineup = [['rickshaw', 0, -9], ['rickshaw', 2, -7], ['bike', 0, -5], ['cng', 0, -2.6], ['car', 2, 0.4], ['car', 3, 3.2], ['bus', 0, 7], ['bus', 1, 10.6]];
+for (const [type, colour, x] of lineup) {
+  const v = buildHireVehicle(type, colour);
+  v.position.set(x, 0, 0);
+  scene.add(v);
+}
+
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+const view = new URLSearchParams(location.search).get('view');
+const focus = Number(new URLSearchParams(location.search).get('x') ?? 0.8);
+const dist = Number(new URLSearchParams(location.search).get('d') ?? 30);
+function frame(t) {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  const a = view === 'front' ? 0.55 : view === 'rear' ? Math.PI - 0.55 : view === 'side' ? Math.PI / 2 : t / 4000;
+  camera.position.set(focus + Math.sin(a) * dist, view === 'top' ? dist : dist * 0.28, Math.cos(a) * dist);
+  camera.lookAt(focus, 1.2, 0);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
