@@ -1,0 +1,8 @@
+node_modules/
+out/
+# Captured game footage and frame dumps: large, regenerable with `npm run capture`.
+public/footage/
+capture/frames/
+capture/stills/
+.cache/
+public/audio/music.wav

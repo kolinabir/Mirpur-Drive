@@ -1,0 +1,15 @@
+{
+  "voice": "af_heart",
+  "speed": 0.92,
+  "lines": [
+    { "id": "01", "at": 1.0, "text": "This is Mirpur." },
+    { "id": "02", "at": 4.4, "text": "Rebuilt street by street, from the real map of Dhaka." },
+    { "id": "03", "at": 12.5, "text": "Take the wheel, under the pillars of Metro Line Six." },
+    { "id": "04", "at": 18.6, "text": "Or leave the car behind. Climb to the platform, and ride the metro." },
+    { "id": "05", "at": 28.3, "text": "Walk the footpaths. Find the stadium, the bazaars, the places you know." },
+    { "id": "06", "at": 34.6, "text": "Through monsoon rain," },
+    { "id": "07", "at": 38.5, "text": "and into the night." },
+    { "id": "08", "at": 42.8, "text": "No download. No install. It runs right in your browser." },
+    { "id": "09", "at": 53.0, "text": "Mirpur Drive. Play it free, right now." }
+  ]
+}

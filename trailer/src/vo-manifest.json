@@ -1,0 +1,38 @@
+{
+  "01": {
+    "file": "audio/vo/01.wav",
+    "seconds": 1.875
+  },
+  "02": {
+    "file": "audio/vo/02.wav",
+    "seconds": 3.85
+  },
+  "03": {
+    "file": "audio/vo/03.wav",
+    "seconds": 3.825
+  },
+  "04": {
+    "file": "audio/vo/04.wav",
+    "seconds": 4.975
+  },
+  "05": {
+    "file": "audio/vo/05.wav",
+    "seconds": 5.125
+  },
+  "06": {
+    "file": "audio/vo/06.wav",
+    "seconds": 2
+  },
+  "07": {
+    "file": "audio/vo/07.wav",
+    "seconds": 1.725
+  },
+  "08": {
+    "file": "audio/vo/08.wav",
+    "seconds": 4.575
+  },
+  "09": {
+    "file": "audio/vo/09.wav",
+    "seconds": 3
+  }
+}

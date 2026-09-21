@@ -1,0 +1,35 @@
+{
+  "name": "mirpur-drive-trailer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "60-second trailer for Mirpur Drive: real game footage captured frame by frame, edited in Remotion.",
+  "scripts": {
+    "studio": "remotion studio",
+    "game:build": "cd .. && vite build --outDir trailer/.cache/game --emptyOutDir",
+    "still": "node capture/still.mjs",
+    "capture": "node capture/capture.mjs",
+    "music": "node capture/render-music.mjs",
+    "vo": "node capture/render-vo.mjs",
+    "render:wide": "remotion render Trailer16x9 out/mirpur-drive-trailer-16x9.mp4 --crf=17",
+    "render:tall": "remotion render Trailer9x16 out/mirpur-drive-trailer-9x16.mp4 --crf=17",
+    "render:audio": "remotion render Trailer16x9 out/mix.wav --codec=wav",
+    "audio:check": "node capture/audio-check.mjs",
+    "render": "npm run render:wide && npm run render:tall"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.526",
+    "@remotion/google-fonts": "^4.0.526",
+    "@remotion/transitions": "^4.0.526",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.526"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "kokoro-js": "^1.2.1",
+    "playwright-core": "^1.63.0",
+    "typescript": "^7.0.2"
+  }
+}
