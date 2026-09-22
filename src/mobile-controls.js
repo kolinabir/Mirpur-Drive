@@ -25,16 +25,16 @@ export function isEditableTarget(target) {
 }
 
 /**
- * @param {{player: import('./player.js').Player, getDrive: () => {driving: boolean, look: (x: number, y: number) => void, cycleCamera: () => void} | undefined, isBlocked: () => boolean, onInteract: () => void}} options
+ * @param {{player: import('./player.js').Player, getDrive: () => {driving: boolean, look: (x: number, y: number) => void, cycleCamera: () => void} | undefined, isBlocked: () => boolean, onInteract: () => void, onPunch?: () => void}} options
  */
-export function createMobileControls({ player, getDrive, isBlocked, onInteract }) {
+export function createMobileControls({ player, getDrive, isBlocked, onInteract, onPunch }) {
   const touchToggle = document.getElementById('touch-controls-toggle');
   if (touchToggle instanceof HTMLInputElement) touchToggle.checked = prefersTouchControls();
   const root = document.createElement('div');
   root.id = 'mobile-controls';
   root.innerHTML = `<div class="touch-instruction">Left thumb to move · drag the street to look</div>
     <div class="touch-stick" role="group" aria-label="Movement joystick"><span class="touch-stick-knob"></span><span class="touch-stick-label">MOVE</span></div>
-    <div class="touch-actions"><button type="button" data-action="interact">Interact</button><button type="button" data-action="view">View</button><button type="button" data-action="run">Run</button><button type="button" data-action="jump">Jump</button><button type="button" data-action="descend">Descend</button></div>
+    <div class="touch-actions"><button type="button" data-action="interact">Interact</button><button type="button" data-action="punch">Punch</button><button type="button" data-action="view">View</button><button type="button" data-action="run">Run</button><button type="button" data-action="jump">Jump</button><button type="button" data-action="descend">Descend</button></div>
     <div class="touch-pedals"><button type="button" data-action="brake">Brake / reverse</button><button type="button" data-action="gas">Accelerate</button></div>`;
   document.body.append(root);
   const stick = root.querySelector('.touch-stick');
@@ -138,6 +138,7 @@ export function createMobileControls({ player, getDrive, isBlocked, onInteract }
       button.addEventListener('click', () => {
         if (blocked()) return;
         if (action === 'interact') onInteract();
+        else if (action === 'punch') onPunch?.();
         else if (getDrive()?.driving) getDrive()?.cycleCamera();
         else player.toggleView();
       }, { signal });

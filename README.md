@@ -37,6 +37,10 @@ photographs and Google Street View of the real place, not invented.
 - **On-foot street life**: hail a rickshaw, CNG or bus, stop at cha stalls,
   follow a food trail, and keep a journal (`J`) of your wallet, what you ate
   and the places you discovered.
+- **Fists and pockets**: punch with `Q` (hold for a kick) — an animated swing,
+  and the person goes down, shouts, gets up and runs while the pavement clears
+  around it. Rob a pedestrian on the ground with `R` for their pocket money,
+  and the street starts remembering you.
 - **Ride the metro**: buy in at the gates, board through the platform screen
   doors and ride MRT Line 6 between districts — north Mirpur and the
   Agargaon / Bijoy Sarani / Farmgate stretch with Jatiya Sangsad Bhaban.
@@ -136,6 +140,7 @@ machine-fetched and fully regenerable. To rebuild them:
 | `Shift` / `Space` | Run / jump |
 | `E` | Interact: hail a ride, cha stalls, food, station gates and trains |
 | `J` | Journal: wallet, food diary, places discovered |
+| `Q` (hold) | Punch, or hold for a kick; rob a downed pedestrian with `R` (touch: Interact) |
 | `V` | Enter / exit the car |
 | `Space` / `X` / `C` / `K` (driving) | Handbrake and drift / switch car / cycle camera / horn |
 | `O` | Teleport menu: every station and landmark |

@@ -31,6 +31,8 @@ const BN = {
   Auto: 'স্বয়ংক্রিয়', Performance: 'পারফরম্যান্স', Language: 'ভাষা',
   'Show FPS counter': 'FPS কাউন্টার দেখান', Blood: 'রক্ত', 'Source on GitHub': 'গিটহাবে সোর্স কোড',
   'Save photo': 'ছবি সংরক্ষণ', 'Exit photo mode': 'ফটো মোড বন্ধ করুন',
+  // street-fight.js: the rob prompt and its toast
+  rob: 'ছিনতাই', Robbed: 'ছিনতাই করা হয়েছে', notoriety: 'কুখ্যাতি',
   // Travel menu
   Here: 'এই এলাকায়', 'By metro': 'মেট্রোতে', Teleport: 'টেলিপোর্ট', 'Ride the metro': 'মেট্রোতে যান',
   'You are here': 'আপনি এখানে',

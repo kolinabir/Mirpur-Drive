@@ -120,3 +120,38 @@ by hand every frame instead. `player.yaw`/`.pitch` (this hook's usual
 look-without-pointer-lock knobs, see above) keep working exactly as
 before even while riding, since mouse-look/keyboard-look write those two
 fields directly and are never gated on `player.update()` running.
+
+## `streetFight` (2026-09-22)
+
+`window.__mirpur.streetFight` — result of `createStreetFight()`
+(`src/street-fight.js`), the on-foot melee + robbery layer:
+
+- `update(dt, suspended)` — returns the current "R: rob ৳NN" prompt line
+  ('' when nobody is down in reach; the keycap reads E on touch devices,
+  where the Interact button does the robbing); drives the hold-to-kick timer
+  and the swing animation.
+- `interact()` — robs the nearest downed pedestrian; returns whether the key
+  was consumed. Robbery is NOT on E: `R` (keyboard) and the touch Interact
+  button call this, while main.js's `interactWithWorld()` chain stays purely
+  E-shaped. `R` is otherwise only drive.js's look-behind (driving) and the
+  full map's recenter (map open) — both modes where `canFight()` is false and
+  this module's handler returns before doing anything.
+- `attack()` — throws a punch; the touch controls' Punch button calls this.
+  The kick is internal: keydown punches, holding ≥0.45 s kicks.
+- `swingGroup` / `swing` — the first-person swing model (world-space fist and
+  boot meshes, `visible` only while a swing plays) and the current swing kind
+  (`'punch' | 'kick' | null`). In third person the group stays hidden and
+  `player.swingPose` is set instead, which player.js forwards into
+  `avatar.update()` so the avatar's own right arm/leg swings.
+- `state` — `{ notoriety, cooldownUntil, lastHitAt }` (notoriety is mirrored
+  to `streetlife.state.data.notoriety` and persisted there).
+- `probe()` — the agent a punch would hit right now, or null. It runs the
+  same scan a keypress does, so it is safe for scripted verification.
+
+The hit itself is `peds.strike(agent, dirX, dirZ, power, blood)` — an
+additive export of `buildPedestrians()` (traffic.js) that reuses the existing
+ragdoll pipeline, the `MAX_RAGDOLLS` cap, `panicNear()` and `hit-fx.js`, so
+the Settings > Blood switch covers melee blood with no extra toggle.
+`peds.say(agent, text, secs)` (also additive) puts a one-off line over an
+agent's head; `peds.panic(x, z)` empties the pavement after a robbery.
+

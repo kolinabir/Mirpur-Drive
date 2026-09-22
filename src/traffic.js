@@ -1833,6 +1833,65 @@ export function buildPedestrians(scene, count = 750, origin = null) {
   }
 
   /**
+   * A melee hit from street-fight.js: knock `a` over with no car involved.
+   *
+   * Same ragdoll pipeline and the same MAX_RAGDOLLS cap as a run-over — a
+   * fist fight cannot outgrow a car rampage — but the impulse is a shove,
+   * not a launch: `power` 0..1 scales the throw (a punch ~0.35, a kick
+   * ~0.85), and only a hard hit (`blood`) spills any, with fx.burst honouring
+   * Settings > Blood exactly like every other hit. `dirX/dirZ` is the
+   * attacker's facing as a unit vector, so the body falls away from them.
+   *
+   * `a.punched` makes the free-agent state machine flee the PLAYER once they
+   * are back on their feet (stepFree), since there is no car to run from.
+   * Returns false when there is nothing to knock over.
+   */
+  function strike(a, dirX, dirZ, power, blood) {
+    if (!a || a.dead) return false;
+    const i = agents.indexOf(a);
+    if (i < 0) return false; // a station agent (its own array): not a street fight
+    const wx = a._wx !== undefined ? a._wx : a.px;
+    const wz = a._wz !== undefined ? a._wz : a.pz;
+    if (wx === undefined || wz === undefined) return false;
+    if (a.free) endFree(a);
+    if (ragdolls.length >= MAX_RAGDOLLS) reviveRagdoll(0, getPlayerProxy());
+    const hard = Math.max(0, Math.min(1, power));
+    // A jab is a knockdown they walk off; the boot hurts and they limp away.
+    a.fate = hard < 0.6 ? 'flee' : 'limp';
+    a.dead = true;
+    a.punched = true;
+    a.rx = wx;
+    a.ry = RAGDOLL_CENTRE * a.scale;
+    a.rz = wz;
+    const thrown = 0.9 + hard * 2.6; // m/s along the hit
+    a.rvx = dirX * thrown;
+    a.rvz = dirZ * thrown;
+    a.rvy = 0.9 + hard * 1.4; // off their feet, not over a bonnet
+    a.ryaw = Math.atan2(a.rvx, a.rvz);
+    a.rpitch = 0;
+    a.rspin = 2 + hard * 4;
+    a.rtime = 0;
+    a.rdown = 1.1 + rnd() * 1.2 + hard * 1.4; // s lying before they push up
+    a.rup = 0;
+    a.rtrail = 0;
+    a.rpooled = false;
+    a.rbounced = false;
+    a.rlanded = false;
+    a.avoidX = 0;
+    a.avoidZ = 0;
+    a.dodgeX = 0; // (wx, wz) already includes any dodge; do not apply it twice
+    a.dodgeZ = 0;
+    a.bx = wx;
+    a.by = 1.75 * a.scale;
+    a.bz = wz;
+    ragdolls.push(i);
+    if (blood) fx.burst(wx, 1.0 * a.scale, wz, dirX * 2, dirZ * 2, 4);
+    if (hard >= 0.6) panicNear(wx, wz); // a public beating clears the pavement
+    shout(a, hard >= 0.6 ? 'panic' : 'flee', 1.8);
+    return true;
+  }
+
+  /**
    * Integrate and pose the run-over figures. Called EVERY frame by main.js
    * (the rest of this system runs at half rate, which is fine for a walk
    * but visibly judders on a body in flight). Near-free when nobody has
@@ -2037,6 +2096,7 @@ export function buildPedestrians(scene, count = 750, origin = null) {
     if (a.mode === 'angry') angryCount--;
     a.free = false;
     a.mode = null;
+    a.punched = false; // street-fight.js knock: only while they are off their rail
     a.timer = 6 + rnd() * 14;
   }
 
@@ -2105,12 +2165,17 @@ export function buildPedestrians(scene, count = 750, origin = null) {
       }
     } else if (a.mode === 'flee' || a.mode === 'limp') {
       const limp = a.mode === 'limp';
-      if (a.modeT > (limp ? 2.5 : 3.5) || !car) {
+      // Who are they running from? The car when one is here; for a
+      // street-fight.js knock (a.punched is only ever set by strike()) there
+      // is no car, so the threat is the player who hit them. Car-hit
+      // survivors are unchanged: tickPlayer is only consulted for the punch.
+      const threat = car || (a.punched && tickPlayer ? tickPlayer : null);
+      if (a.modeT > (limp ? 2.5 : 3.5) || !threat) {
         a.mode = 'return';
         a.limping = limp;
       } else {
-        const dx = a.px - car.x;
-        const dz = a.pz - car.z;
+        const dx = a.px - threat.x;
+        const dz = a.pz - threat.z;
         const d = Math.hypot(dx, dz) || 1;
         walkFree(a, a.px + (dx / d) * 5, a.pz + (dz / d) * 5, limp ? 0.7 : 3.2, dt);
         if (limp && rnd() < dt * 0.8) fx.splat(a.px, a.pz, 0.05 + rnd() * 0.05); // drips
@@ -2404,6 +2469,12 @@ export function buildPedestrians(scene, count = 750, origin = null) {
     updateRagdolls,
     /** Settings > Blood. */
     setBlood: fx.setBlood,
+    /** street-fight.js: melee knock (see the comment on strike()). */
+    strike,
+    /** street-fight.js: crowd panic after a public act (a robbery in the open). */
+    panic: panicNear,
+    /** street-fight.js: a one-off line over an agent's head. */
+    say: (a, text, secs) => fx.say(a, text, secs),
     agents, // verification only, like buildTraffic's `systems`
     stats: { count: streetCount, stationAgents: stationAgents.length },
     perf,

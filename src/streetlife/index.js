@@ -292,5 +292,5 @@ export function createStreetLife({ scene, scene3, hud, player, camera, traffic, 
     else if (!ui.panelOpen) openJournal();
   }
 
-  return { update, interact, toggleJournal, state, world, rides, get riding() { return rides.riding; } };
+  return { update, interact, toggleJournal, state, world, rides, ui, get riding() { return rides.riding; } };
 }

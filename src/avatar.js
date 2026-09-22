@@ -35,6 +35,10 @@ const MAX_LEG_SWING = 0.62; // rad, full running stride
 const MAX_ARM_SWING = 0.5;
 const IDLE_SWAY = 0.05; // rad, gentle idle arm sway when stopped
 const FACING_SMOOTH = 8; // 1/s, how fast the avatar turns toward travel dir
+// Melee swing peaks (street-fight.js): the right arm throws a punch, the right
+// leg a kick, from the same pivots the walk cycle already uses.
+const PUNCH_SWING = 1.5; // rad forward at the peak
+const KICK_SWING = 1.0;
 
 const SHIRT_COLOR = new THREE.Color(0x3f5f8c);
 const SKIN_COLOR = new THREE.Color(0x8a6a4f);
@@ -133,8 +137,10 @@ export function createAvatar() {
      * @param opts.speed horizontal ground speed, m/s
      * @param opts.running true while sprinting (Shift)
      * @param opts.movingYaw direction of travel (radians), or null when idle
+     * @param opts.swing street-fight.js's swing ({ kind, t }) or null: poses
+     *   the right arm/leg over the walk cycle for the third-person punch/kick
      */
-    update(dt, { x, z, feetY, speed, running, movingYaw }) {
+    update(dt, { x, z, feetY, speed, running, movingYaw, swing }) {
       group.position.set(x, feetY, z);
 
       const moving = speed > 0.15;
@@ -158,6 +164,14 @@ export function createAvatar() {
         setInstance(legs, 1, HIP_OFFSET, HIP_Y, 0);
         setInstance(arms, 0, -SHOULDER_OFFSET, SHOULDER_HEIGHT, Math.sin(phase) * IDLE_SWAY);
         setInstance(arms, 1, SHOULDER_OFFSET, SHOULDER_HEIGHT, Math.sin(phase + Math.PI) * IDLE_SWAY);
+      }
+      // Melee swing (street-fight.js, forwarded by player.js): applied AFTER
+      // the walk/idle pose so it wins for those few frames. Index 1 is +X —
+      // the right-hand side of a figure whose local forward is -Z.
+      if (swing) {
+        const k = Math.sin(Math.PI * Math.min(1, Math.max(0, swing.t))); // 0 -> 1 -> 0
+        if (swing.kind === 'kick') setInstance(legs, 1, HIP_OFFSET, HIP_Y, KICK_SWING * k);
+        else setInstance(arms, 1, SHOULDER_OFFSET, SHOULDER_HEIGHT, PUNCH_SWING * k);
       }
       legs.instanceMatrix.needsUpdate = true;
       arms.instanceMatrix.needsUpdate = true;
