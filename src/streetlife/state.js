@@ -23,6 +23,9 @@ export function createStreetState(districtKey) {
     cups: 0,
     stall: null, // { name, x, z }
     errand: null, // { name, x, z, reward, from }
+    // street-fight.js: robberies the street remembers, decayed in that module
+    // and only ever read here (the journal does not show it yet).
+    notoriety: 0,
   };
 
   try {

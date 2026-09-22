@@ -27,7 +27,7 @@ The game contains no chat, no user-generated content, no purchases and no violen
 
 ## Changes and questions
 
-This page is kept in the public repository, so every change to it is recorded in its history. It was last generated on 2026-09-20. Questions can be raised through the contact page.
+This page is kept in the public repository, so every change to it is recorded in its history. It was last generated on 2026-09-22. Questions can be raised through the contact page.
 
 ## Links
 

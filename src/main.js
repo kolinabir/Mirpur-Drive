@@ -41,6 +41,7 @@ import { createPlatformBoards } from './platform-boards.js';
 import { createFirstJourney } from './first-journey.js';
 import { createMobileControls, isGameplayBlocked } from './mobile-controls.js';
 import { createStreetLife } from './streetlife/index.js';
+import { createStreetFight } from './street-fight.js';
 import { buildMirpur10Bridge } from './mirpur10-bridge.js';
 import { buildStadium, STADIUM_BUILDING_IDS } from './stadium.js';
 import { buildBenarasiPalli } from './benarasi-palli.js';
@@ -903,6 +904,23 @@ async function main() {
   }
   window.__mirpur.streetlife = streetlife; // debug hook: .world.stalls/.eateries/.places, .state.data, .rides
 
+  // On-foot melee + robbery (src/street-fight.js). Created here — before the
+  // quality wiring below, which runs immediately and expects the system to
+  // exist — and after streetlife, whose wallet and toast UI it pays into.
+  // `isBlocked` is a closure, so the modes it reads only have to exist when a
+  // key is actually pressed; menus are covered by isGameplayBlocked().
+  const streetFight = createStreetFight({
+    scene: scene3,
+    camera,
+    player,
+    peds,
+    streetlife,
+    isBlocked: () => isGameplayBlocked() || introCinematic.active || switchCamera.active ||
+      document.body.classList.contains('photo-mode') ||
+      (window.__mirpur.drive?.driving ?? false) || stationlife.state.riding || player.inRide,
+  });
+  window.__mirpur.streetFight = streetFight; // debug hook: .state, .probe(), .attack(), .swing
+
   // Street dressing (posters, festoons, scaffolding, parked rickshaws, dogs),
   // the small things that move (birds, exhaust, steam, tube lights), and the
   // monsoon. B is for বৃষ্টি; ?weather=rain starts wet.
@@ -925,7 +943,7 @@ async function main() {
   const applyEffectsQuality = () => {
     // minimal = still over budget with the governor's draw distances well in (or a phone that has started to struggle).
     const tier = governorDetail <= (lowEnd ? 0.8 : 0.65) ? 'minimal' : lowEnd || performanceMode || governorDetail < 0.9 ? 'low' : 'high';
-    for (const system of [streetClutter, streetMotion, monsoon, platformBoards]) system.setQuality(tier);
+    for (const system of [streetClutter, streetMotion, monsoon, platformBoards, streetFight]) system.setQuality(tier);
     window.__mirpur.effectsTier = tier;
   };
   setEffectsPerformanceMode = (on) => { performanceMode = on; applyEffectsQuality(); };
@@ -935,6 +953,7 @@ async function main() {
       previous(scale);
       streetClutter.setDetailScale(scale);
       platformBoards.setDetailScale(scale);
+      streetFight.setDetailScale(scale);
       governorDetail = scale;
       applyEffectsQuality();
     };
@@ -944,6 +963,8 @@ async function main() {
   // the street otherwise; a ride in progress always owns it.
   let stationPromptShown = false;
   const interactWithWorld = () => {
+    // E stays purely "interact" (hail a ride, cha, gates, board a train).
+    // Robbery has its own key (R) and is handled by street-fight.js itself.
     if (streetlife.riding || !stationPromptShown) {
       if (streetlife.interact()) return;
     }
@@ -967,15 +988,18 @@ async function main() {
     interactionText = text;
     interactionEl.replaceChildren();
     if (!text) return;
-    const at = text.indexOf('E: ');
-    if (at < 0) {
+    // A single-letter prompt prefix becomes a keycap ("E: ...", "R: rob ...").
+    // Every prompt was "E: " until the street-fight pass; matching the letter
+    // generically keeps one renderer for both keys.
+    const m = /^([A-Z]): /.exec(text);
+    if (!m) {
       interactionEl.textContent = text;
       return;
     }
     const key = document.createElement('kbd');
-    key.textContent = 'E';
-    const verb = text.slice(at + 3);
-    interactionEl.append(text.slice(0, at), key, verb.charAt(0).toUpperCase() + verb.slice(1));
+    key.textContent = m[1];
+    const verb = text.slice(m[0].length);
+    interactionEl.append(text.slice(0, m.index), key, verb.charAt(0).toUpperCase() + verb.slice(1));
     interactionEl.classList.remove('pop');
     void interactionEl.offsetWidth; // restart the fade-in for a new prompt
     interactionEl.classList.add('pop');
@@ -1451,7 +1475,12 @@ async function main() {
     player,
     getDrive: () => window.__mirpur.drive,
     isBlocked: () => introCinematic.active || switchCamera.active,
-    onInteract: () => interactWithWorld(),
+    // Touch has no R key: the Interact button robs when a body is in reach and
+    // otherwise falls through to the normal E chain (see street-fight.js).
+    onInteract: () => {
+      if (!streetFight.interact()) interactWithWorld();
+    },
+    onPunch: () => streetFight.attack(),
   });
   const beginButton = document.getElementById('begin');
   if (teleportX != null || arriveStation) {
@@ -1831,12 +1860,15 @@ async function main() {
     const streetSuspended = hud.classList.contains('hidden') || introCinematic.active || switchCamera.active ||
       stationlife.state.riding || player.inLift || (window.__mirpur.drive?.driving ?? false);
     const streetLine = streetlife.update(dt, elapsed, streetSuspended);
+    const streetFightLine = streetFight.update(dt, streetSuspended);
     // Hailing a ride / getting down raises no 'modechange', so watch for it here.
     if (!!player.inRide !== wasInRide) {
       wasInRide = !!player.inRide;
       refreshModeLabel();
     }
-    setInteraction(streetlife.riding ? streetLine : stationlifeLine || interiorLine || streetLine);
+    // The rob prompt outranks the on-foot streetlife lines (a body at your feet
+    // is more specific than the stall behind it) but not the metro's own.
+    setInteraction(streetlife.riding ? streetLine : stationlifeLine || interiorLine || streetFightLine || streetLine);
     updateTransitHud();
     boundaryEl.classList.toggle('hidden', !player.leavingMirpur);
     firstJourney.update(dt, window.__mirpur.drive?.driving ?? false, isGameplayBlocked() || player.inRide || player.feetY > 1 || stationlife.state.riding || player.inLift || introCinematic.active || switchCamera.active || minimap.expanded || !helpModal.classList.contains('hidden') || !teleportModal.classList.contains('hidden') || !gatewayEl.classList.contains('hidden'));

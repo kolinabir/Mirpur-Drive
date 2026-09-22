@@ -468,6 +468,10 @@ export class Player {
       speed,
       running: this._fast,
       movingYaw,
+      // street-fight.js's swing while a punch/kick is playing (null otherwise):
+      // the third-person half of the melee animation. avatar.js poses the
+      // right arm/leg from it; nothing is allocated here.
+      swing: this.swingPose || null,
     });
 
     const pivotX = this.position.x;
